@@ -106,3 +106,252 @@ class Game:
                     drawHex(self.screen, LIGHTBLUE, LIGHTYELLOW, (x, y), self.tile_size)
                 else:
                     drawHex(self.screen, DARKRED, LIGHTYELLOW, (x, y), self.tile_size)
+
+    def checkWin(self):
+        '''checks if any of the players have won using Dijkstra's algorithm'''
+        from funcs import dijkstra_check_win
+        
+        # Check if player 2 (Blue) has won - connects left to right
+        if dijkstra_check_win(self.state, 2):
+            return 2
+        
+        # Check if player 1 (Green) has won - connects top to bottom
+        if dijkstra_check_win(self.state, 1):
+            return 1
+        
+        return 0
+
+    def estimateWinningDistance(self):
+        '''
+        Uses Dijkstra's algorithm to estimate which player is closer to winning.
+        Models the game as a graph where each hex cell is a node.
+        Returns tuple (player1_distance, player2_distance) where:
+        - player1_distance: minimum moves needed for Green to connect top to bottom
+        - player2_distance: minimum moves needed for Blue to connect left to right
+        Lower distance means closer to winning.
+        '''
+        from funcs import estimate_winning_chance
+        return estimate_winning_chance(self.state)
+
+    def cpuMove(self):
+        '''
+        CPU (Player 2, Blue) makes a move using Dijkstra-based logic.
+        Strategy: 
+        1. If CPU can win immediately, do it
+        2. If human is close to winning, prioritize blocking
+        3. Otherwise, balance winning and blocking
+        '''
+        # Find all empty cells
+        empty_cells = []
+        for r in range(self.size):
+            for c in range(self.size):
+                if self.state[r][c] == 0:
+                    empty_cells.append((r, c))
+        
+        # If no empty cells, return
+        if not empty_cells:
+            return
+        
+        # Get current distances before CPU move using Dijkstra
+        human_dist_before, cpu_dist_before = self.estimateWinningDistance()
+        
+        best_move = None
+        best_score = float('-inf')
+        
+        # Try each empty cell to find the best move
+        for r, c in empty_cells:
+            # Temporarily place CPU's move here
+            self.state[r][c] = 2
+            
+            # Calculate distances after this move using Dijkstra
+            human_dist_after, cpu_dist_after = self.estimateWinningDistance()
+            
+            # Check if this move makes CPU win immediately
+            if cpu_dist_after == 0:
+                # CPU wins! This is the best move
+                self.state[r][c] = 0  # Undo temporary move
+                best_move = (r, c)
+                break
+            
+            # Calculate improvements
+            cpu_improvement = cpu_dist_before - cpu_dist_after  # How much closer CPU gets to winning
+            human_block = human_dist_after - human_dist_before  # How much further human is from winning
+            
+            # Determine threat level: how close is human to winning?
+            human_threat_level = human_dist_before
+            
+            # Dynamic scoring based on threat level
+            if human_threat_level <= 2:
+                # Human is very close to winning - prioritize blocking heavily
+                score = (5 * human_block) + cpu_improvement
+            elif human_threat_level <= 4:
+                # Human is moderately close - balance but favor blocking
+                score = (2.5 * human_block) + cpu_improvement
+            else:
+                # Human is not immediately threatening - balance both strategies
+                score = (1.5 * human_block) + cpu_improvement
+            
+            # Undo the temporary move
+            self.state[r][c] = 0
+            
+            # Keep track of best move
+            if score > best_score:
+                best_score = score
+                best_move = (r, c)
+        
+        # Make the best move
+        if best_move:
+            r, c = best_move
+            self.state[r][c] = 2
+            if self.sound_state:
+                self.click_sound_channel.play(self.click_sound)
+            self.move = 1  # Switch back to human player
+
+    def shadow(self):
+        shadow = pg.Surface((W, H))
+        shadow.set_alpha(200)
+        self.screen.blit(shadow, (0, 0))
+
+    def startScreen(self):
+        '''shows start screen, returns True if the game has started'''
+        start = True
+        # initializing buttons
+        play = Button((W/2, 2*H/3), 80, 'Play')
+        rules = Button((W-100, H-75), 50, 'Rules')
+        buttons = [play, rules]
+        while start:
+            # sticking to fps
+            self.clock.tick(FPS)
+            # --------------------EVENTS---------------------
+            for event in pg.event.get():
+                if event.type == pg.QUIT:
+                    # if exit button is pressed
+                    return False
+                elif event.type == pg.MOUSEBUTTONDOWN:
+                    # if mouse is pressed check button overlapping
+                    if play.triggered(channel=self.click_sound_channel,
+                                      sound=self.click_sound,
+                                      playing=self.sound_state):
+                        self.__init__(self.size)
+                        self.started = True
+                        return True
+                    if rules.triggered(channel=self.click_sound_channel,
+                                       sound=self.click_sound,
+                                       playing=self.sound_state):
+                        start = self.rulesScreen()
+            # highlight buttons
+            for button in buttons:
+                button.highlighted()
+            # --------------------STUFF-----------------------
+            self.screen.fill(self.bg_color)
+            textOut(self.screen, 'HEX', 200, ORANGE, (W/2, H/3))
+            # show buttons
+            for button in buttons:
+                button.show(self.screen)
+            # double processing
+            pg.display.flip()
+
+    def rulesScreen(self):
+        '''shows the rules of the game, returns True if the "back" button was hit'''
+        start = True
+        # initializing buttons
+        back = Button((30, 30), 50, img=self.back_img)
+        buttons = [back]
+        while start:
+            # sticking to fps
+            self.clock.tick(FPS)
+            # --------------------EVENTS---------------------
+            for event in pg.event.get():
+                if event.type == pg.QUIT:
+                    # if exit button is pressed
+                    return False
+                elif event.type == pg.MOUSEBUTTONDOWN:
+                    # if mouse is pressed check button overlapping
+                    if back.triggered(channel=self.click_sound_channel,
+                                      sound=self.click_sound,
+                                      playing=self.sound_state):
+                        return True
+            # highlight buttons
+            for button in buttons:
+                button.highlighted()
+            # --------------------STUFF-----------------------
+            self.screen.fill(self.bg_color)
+            textOut(self.screen, 'Rules', 100, ORANGE, (W/2, H/3))
+            textOutMultiline(self.screen, self.rules_text, 30, WHITE, (W/2, H/3))
+            # show buttons
+            for button in buttons:
+                button.show(self.screen)
+            # double processing
+            pg.display.flip()
+
+    def pauseScreen(self):
+        '''shows pause screen, returns True if the game was resumed'''
+        start = True
+        # initializing buttons
+        resume = Button((W/2, H/3), 80, 'Resume', col=ORANGE)
+        home = Button((W/2, H/2), 50, 'Home', col=WHITE)
+        buttons = [home, resume]
+        while start:
+            # sticking to fps
+            self.clock.tick(FPS)
+            # --------------------EVENTS---------------------
+            for event in pg.event.get():
+                if event.type == pg.QUIT:
+                    # if exit button is pressed
+                    return False
+                elif event.type == pg.MOUSEBUTTONDOWN:
+                    # if mouse is pressed check button overlapping
+                    if home.triggered(channel=self.click_sound_channel,
+                                      sound=self.click_sound,
+                                      playing=self.sound_state):
+                        self.started = False
+                        return True
+                    if resume.triggered(channel=self.click_sound_channel,
+                                        sound=self.click_sound,
+                                        playing=self.sound_state):
+                        return True
+            # highlight buttons
+            for button in buttons:
+                button.highlighted()
+            # --------------------STUFF-----------------------
+            # show buttons
+            self.screen.fill(self.bg_color)
+            self.showGrid()
+            self.shadow()
+            for button in buttons:
+                button.show(self.screen)
+            # double processing
+            pg.display.flip()
+
+    def GOScreen(self, winner):
+        '''shows game over screen, returns True if any key is hit'''
+        go = True
+        home = Button((W/2, 2*H/3), 50, 'Home', col=WHITE)
+        while go:
+            # sticking to fps
+            self.clock.tick(FPS)
+            # --------------------EVENTS---------------------
+            for event in pg.event.get():
+                if event.type == pg.QUIT:
+                    # if exit button is pressed
+                    return False
+                elif event.type == pg.MOUSEBUTTONDOWN:
+                    # if mouse is pressed check button overlapping
+                    if home.triggered(channel=self.click_sound_channel,
+                                      sound=self.click_sound,
+                                      playing=self.sound_state):
+                        self.started = False
+                        return True
+            home.highlighted()
+            # --------------------STUFF-----------------------
+            self.screen.fill(self.bg_color)
+            self.showGrid()
+            self.shadow()
+            textOut(self.screen, 'GAME OVER', 80, ORANGE, (W/2, H/3))
+            if winner == 2:
+                textOut(self.screen, 'Blue won', 60, BLUE, (W/2, H/2))
+            else:
+                textOut(self.screen, 'Green won', 60, GREEN, (W/2, H/2))
+            home.show(self.screen)
+            # double processing
+            pg.display.flip()
