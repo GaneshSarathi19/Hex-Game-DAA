@@ -151,3 +151,93 @@ def dijkstra_check_win(grid, player):
     
     # No path found to target side
     return False
+def dijkstra_winning_distance(grid, player):
+    '''
+    Uses Dijkstra's algorithm to estimate the minimum distance to winning for a player.
+    Models the hex board as a graph where:
+    - Each hex cell is a node
+    - Edge weight = 0 if cell is owned by player, 1 if empty, infinity if opponent's
+    
+    For Player 1 (Green): finds shortest path from top row (row 0) to bottom row (row size-1)
+    For Player 2 (Blue): finds shortest path from left column (col 0) to right column (col size-1)
+    
+    Returns the minimum distance (number of moves needed) to win, or float('inf') if impossible.
+    '''
+    size = len(grid)
+    INF = float('inf')
+    
+    # Initialize distance matrix
+    dist = [[INF for _ in range(size)] for __ in range(size)]
+    
+    # Priority queue: (distance, row, col)
+    pq = []
+    
+    if player == 1:  # Green: connect top (row 0) to bottom (row size-1)
+        # Initialize all cells in top row
+        for col in range(size):
+            if grid[0][col] == player:
+                dist[0][col] = 0
+                heapq.heappush(pq, (0, 0, col))
+            elif grid[0][col] == 0:  # Empty cell
+                dist[0][col] = 1
+                heapq.heappush(pq, (1, 0, col))
+            # If opponent's cell, distance remains INF (can't start from there)
+    else:  # Player 2 (Blue): connect left (col 0) to right (col size-1)
+        # Initialize all cells in left column
+        for row in range(size):
+            if grid[row][0] == player:
+                dist[row][0] = 0
+                heapq.heappush(pq, (0, row, 0))
+            elif grid[row][0] == 0:  # Empty cell
+                dist[row][0] = 1
+                heapq.heappush(pq, (1, row, 0))
+            # If opponent's cell, distance remains INF
+    
+    # Dijkstra's algorithm
+    while pq:
+        d, r, c = heapq.heappop(pq)
+        
+        # If we've already found a better path, skip
+        if d > dist[r][c]:
+            continue
+        
+        # Check if we've reached the target side
+        # Since Dijkstra processes nodes in order of increasing distance,
+        # the first target node we pop is guaranteed to be the shortest path
+        if player == 1 and r == size - 1:  # Green reached bottom
+            return dist[r][c]
+        elif player == 2 and c == size - 1:  # Blue reached right
+            return dist[r][c]
+        
+        # Explore neighbors (hexagonal adjacency)
+        for move in moves:
+            nr, nc = r + move.X, c + move.Y
+            
+            if not (0 <= nr < size and 0 <= nc < size):
+                continue
+            
+            # Calculate edge weight
+            if grid[nr][nc] == player:
+                weight = 0  # Already owned by player
+            elif grid[nr][nc] == 0:
+                weight = 1  # Empty cell, need to claim it
+            else:
+                continue  # Opponent's cell, can't traverse
+            
+            # Relax edge
+            new_dist = dist[r][c] + weight
+            if new_dist < dist[nr][nc]:
+                dist[nr][nc] = new_dist
+                heapq.heappush(pq, (new_dist, nr, nc))
+    
+    # No path found to target side
+    return INF
+
+def estimate_winning_chance(grid):
+    '''
+    Estimates which player is closer to winning using Dijkstra's algorithm.
+    Returns a tuple (player1_distance, player2_distance) where lower distance means closer to winning.
+    '''
+    player1_dist = dijkstra_winning_distance(grid, 1)  # Green
+    player2_dist = dijkstra_winning_distance(grid, 2)  # Blue
+    return (player1_dist, player2_dist)
