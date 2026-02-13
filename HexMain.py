@@ -31,9 +31,7 @@ while run:
                 # If human made a move, CPU moves automatically
                 if old_move == 1 and game.move == 2:
                     game.cpuMove()
-                if pause.triggered(channel=game.click_sound_channel,
-                                   sound=game.click_sound,
-                                   playing=game.sound_state):
+                if pause.triggered():
                     run = game.pauseScreen()
 
         # highlight buttons

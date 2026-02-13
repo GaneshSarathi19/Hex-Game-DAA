@@ -26,8 +26,6 @@ BACK_IMG = 'back.png'
 UP_IMG = 'up-arrow.png'
 DOWN_IMG = 'down-arrow.png'
 RULES = 'rules.txt'
-BACKGROUND_MUSIC = 'bg-music.wav'
-CLICK_SOUND = 'click.wav'
 # size of the window
 W = 600
 H = 600

@@ -9,7 +9,6 @@ from Button import *
 class Game:
     def __init__(self, size):
         pg.init()
-        pg.mixer.init()
         self.screen = pg.display.set_mode((W, H))
         self.clock = pg.time.Clock()
         self.size = size
@@ -18,8 +17,8 @@ class Game:
         self.origin = Point(W/2 - (H/2-50)/sqrt(3), 50)
         self.move = 1
         self.started = False
-        self.sound_state = True
         self.bg_color = BLACK
+        self.ai_mode = 'Greedy'  # Default AI mode: 'Greedy', 'D&C', or 'DP'
 
     def loadData(self):
         '''load all the data (images, files, etc)'''
@@ -33,10 +32,6 @@ class Game:
 
         self.pause_img = pg.image.load(path.join(img_folder, PAUSE_IMG)).convert_alpha()
         self.back_img = pg.image.load(path.join(img_folder, BACK_IMG)).convert_alpha()
-
-        #------------------SOUNDS--------------------
-        self.click_sound = pg.mixer.Sound(path.join(doc_folder, CLICK_SOUND))
-        self.click_sound_channel = pg.mixer.Channel(2)
 
         #-----------------TEXT--------------------
         with open(path.join(doc_folder, RULES), 'r') as f:
@@ -62,8 +57,6 @@ class Game:
                 x, y = self.coords(r, c)
                 if inHex(pos, x, y, self.tile_size) and self.state[r][c] != 2\
                                                     and self.state[r][c] != 1:
-                    if self.sound_state:
-                        self.click_sound_channel.play(self.click_sound)
                     self.state[r][c] = self.move
                     self.move = 3-self.move
 
@@ -135,7 +128,20 @@ class Game:
 
     def cpuMove(self):
         '''
-        CPU (Player 2, Blue) makes a move using Dijkstra-based logic.
+        CPU (Player 2, Blue) makes a move using the selected AI strategy.
+        '''
+        if self.ai_mode == 'Greedy':
+            self._cpuMoveGreedy()
+        elif self.ai_mode == 'D&C':
+            self._cpuMoveDivideConquer()
+        elif self.ai_mode == 'DP':
+            self._cpuMoveDynamicProgramming()
+        else:  # Default fallback to Greedy
+            self._cpuMoveGreedy()
+    
+    def _cpuMoveGreedy(self):
+        '''
+        Greedy AI: Uses Dijkstra's algorithm (a greedy algorithm) to find optimal moves.
         Strategy: 
         1. If CPU can win immediately, do it
         2. If human is close to winning, prioritize blocking
@@ -203,9 +209,23 @@ class Game:
         if best_move:
             r, c = best_move
             self.state[r][c] = 2
-            if self.sound_state:
-                self.click_sound_channel.play(self.click_sound)
             self.move = 1  # Switch back to human player
+    
+    def _cpuMoveDivideConquer(self):
+        '''
+        Divide & Conquer AI: Placeholder for future implementation.
+        Currently does nothing.
+        '''
+        # TODO: Implement Divide & Conquer algorithm
+        pass
+    
+    def _cpuMoveDynamicProgramming(self):
+        '''
+        Dynamic Programming AI: Placeholder for future implementation.
+        Currently does nothing.
+        '''
+        # TODO: Implement Dynamic Programming algorithm
+        pass
 
     def shadow(self):
         shadow = pg.Surface((W, H))
@@ -213,42 +233,75 @@ class Game:
         self.screen.blit(shadow, (0, 0))
 
     def startScreen(self):
-        '''shows start screen, returns True if the game has started'''
+        '''Home screen: title, strategy options only, Start and Rules. Fits 600x600.'''
         start = True
-        # initializing buttons
-        play = Button((W/2, 2*H/3), 80, 'Play')
-        rules = Button((W-100, H-75), 50, 'Rules')
-        buttons = [play, rules]
+        selected_ai_mode = 'Greedy'
+
+        # Layout: fit 600x600 with even spacing and margins
+        margin = 50
+        title_y = 70
+        # Strategy options in a single row (centered, balanced)
+        grid_center_x = W / 2
+        strategy_y = 220
+        btn_size = 42
+        btn_spacing = 140  # Spacing between buttons
+
+        greedy_btn = Button((grid_center_x - btn_spacing, strategy_y), btn_size, 'Greedy', col=GREEN)
+        dnc_btn = Button((grid_center_x, strategy_y), btn_size, 'D&C', col=LIGHTBLUE)
+        dp_btn = Button((grid_center_x + btn_spacing, strategy_y), btn_size, 'DP', col=YELLOW)
+        mode_buttons = [greedy_btn, dnc_btn, dp_btn]
+
+        play_y = 400
+        rules_y = 480
+        play = Button((grid_center_x, play_y), 52, 'Start Game', col=GREEN)
+        rules = Button((grid_center_x, rules_y), 44, 'Rules', col=WHITE)
+        buttons = [play, rules] + mode_buttons
+
         while start:
-            # sticking to fps
             self.clock.tick(FPS)
-            # --------------------EVENTS---------------------
             for event in pg.event.get():
                 if event.type == pg.QUIT:
-                    # if exit button is pressed
                     return False
                 elif event.type == pg.MOUSEBUTTONDOWN:
-                    # if mouse is pressed check button overlapping
-                    if play.triggered(channel=self.click_sound_channel,
-                                      sound=self.click_sound,
-                                      playing=self.sound_state):
+                    if greedy_btn.triggered():
+                        selected_ai_mode = 'Greedy'
+                    elif dnc_btn.triggered():
+                        selected_ai_mode = 'D&C'
+                    elif dp_btn.triggered():
+                        selected_ai_mode = 'DP'
+                    if play.triggered():
                         self.__init__(self.size)
+                        self.ai_mode = selected_ai_mode
                         self.started = True
                         return True
-                    if rules.triggered(channel=self.click_sound_channel,
-                                       sound=self.click_sound,
-                                       playing=self.sound_state):
+                    if rules.triggered():
                         start = self.rulesScreen()
-            # highlight buttons
+
             for button in buttons:
                 button.highlighted()
-            # --------------------STUFF-----------------------
+
             self.screen.fill(self.bg_color)
-            textOut(self.screen, 'HEX', 200, ORANGE, (W/2, H/3))
-            # show buttons
+
+            # Title only
+            textOut(self.screen, 'HEX GAME', 72, ORANGE, (grid_center_x, title_y))
+
+            # Optional: thin line under title for separation
+            pg.draw.line(self.screen, (70, 70, 70), (margin, title_y + 50), (W - margin, title_y + 50), 1)
+
+            # Selection indicator: draw border on selected strategy button area
+            strategy_pos = {
+                'Greedy': (grid_center_x - btn_spacing, strategy_y),
+                'D&C': (grid_center_x, strategy_y),
+                'DP': (grid_center_x + btn_spacing, strategy_y),
+            }
+            strategy_colors = {'Greedy': GREEN, 'D&C': LIGHTBLUE, 'DP': YELLOW}
+            sx, sy = strategy_pos[selected_ai_mode]
+            pg.draw.rect(self.screen, strategy_colors[selected_ai_mode],
+                         (sx - 62, sy - 22, 124, 44), 2)
+
             for button in buttons:
                 button.show(self.screen)
-            # double processing
+
             pg.display.flip()
 
     def rulesScreen(self):
@@ -267,9 +320,7 @@ class Game:
                     return False
                 elif event.type == pg.MOUSEBUTTONDOWN:
                     # if mouse is pressed check button overlapping
-                    if back.triggered(channel=self.click_sound_channel,
-                                      sound=self.click_sound,
-                                      playing=self.sound_state):
+                    if back.triggered():
                         return True
             # highlight buttons
             for button in buttons:
@@ -301,14 +352,10 @@ class Game:
                     return False
                 elif event.type == pg.MOUSEBUTTONDOWN:
                     # if mouse is pressed check button overlapping
-                    if home.triggered(channel=self.click_sound_channel,
-                                      sound=self.click_sound,
-                                      playing=self.sound_state):
+                    if home.triggered():
                         self.started = False
                         return True
-                    if resume.triggered(channel=self.click_sound_channel,
-                                        sound=self.click_sound,
-                                        playing=self.sound_state):
+                    if resume.triggered():
                         return True
             # highlight buttons
             for button in buttons:
@@ -337,9 +384,7 @@ class Game:
                     return False
                 elif event.type == pg.MOUSEBUTTONDOWN:
                     # if mouse is pressed check button overlapping
-                    if home.triggered(channel=self.click_sound_channel,
-                                      sound=self.click_sound,
-                                      playing=self.sound_state):
+                    if home.triggered():
                         self.started = False
                         return True
             home.highlighted()
