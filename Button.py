@@ -37,12 +37,10 @@ class Button:
         else:
             self.size = self.original_size
 
-    def triggered(self, channel=None, sound=None, playing=False):
+    def triggered(self):
         '''returns True if the button is pressed'''
         x, y, w, h = self.params()
         pos = pg.mouse.get_pos()
-        if inRect(Point(pos), x, y, w, h) and channel and sound and playing:
-            channel.play(sound)
         return inRect(Point(pos), x, y, w, h)
 
     def imgUpdate(self):
