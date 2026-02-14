@@ -213,7 +213,7 @@ class Game:
     
     def _cpuMoveDivideConquer(self):
         '''
-        Divide & Conquer AI: True recursive DIVIDE -> RECURSE -> COMBINE.
+        Divide & Conquer AI: True recursive DIVIDE → RECURSE → COMBINE.
         Returns best move (row, col) for CPU (Blue) from full board.
         '''
         result = self._dcSolve(0, self.size - 1, 0, self.size - 1)
@@ -222,43 +222,119 @@ class Game:
             self.state[r][c] = 2
             self.move = 1
             return
-        # Fallback: if D&C returned no valid move (e.g. base case had no empty cell), use first empty
+        # Fallback: if D&C returned no valid move, use first empty
         for ri in range(self.size):
             for cj in range(self.size):
                 if self.state[ri][cj] == 0:
                     self.state[ri][cj] = 2
                     self.move = 1
                     return
-
+    
     def _dcScoreCell(self, r, c):
-        '''
-        Score a single empty cell for CPU (Blue).
-        score = closeness_to_goal + friendly_neighbors - opponent_neighbors
-        '''
-        # Blue connects left (col 0) to right (col size-1)
-        closeness_to_goal = (self.size - 1) - min(c, self.size - 1 - c)
+        if self.state[r][c] != 0:
+            return float('-inf')
+        
+        # Temporarily place stone
+        self.state[r][c] = 2
+        
+        # Evaluate using pure D&C territory/influence calculation
+        blue_influence = self._dcInfluence(0, self.size - 1, 0, self.size - 1, 2)
+        red_influence = self._dcInfluence(0, self.size - 1, 0, self.size - 1, 1)
+        
+        # Remove stone
+        self.state[r][c] = 0
+        
+        # Score based on influence gain
+        score = blue_influence - red_influence
+        
+        # Bonus for horizontal position (Blue connects left-right)
+        horizontal_progress = c / (self.size - 1)  # 0.0 at left, 1.0 at right
+        score += (0.5 - abs(horizontal_progress - 0.5)) * 2  # Peak at center
+        
+        # Connectivity bonus
         friendly = 0
-        opponent = 0
-        for move in moves:
-            nr, nc = r + move.X, c + move.Y
-            if 0 <= nr < self.size and 0 <= nc < self.size:
-                if self.state[nr][nc] == 2:
-                    friendly += 1
-                elif self.state[nr][nc] == 1:
-                    opponent += 1
-        return closeness_to_goal + friendly - opponent
+        for dr, dc in [(-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0)]:
+            nr, nc = r + dr, c + dc
+            if 0 <= nr < self.size and 0 <= nc < self.size and self.state[nr][nc] == 2:
+                friendly += 1
+        score += friendly * 0.5
+        
+        return score
 
-    def _dcSolve(self, rowStart, rowEnd, colStart, colEnd):
-        '''
-        Recursive D&C: takes subboard boundaries [rowStart..rowEnd], [colStart..colEnd].
-        Returns (row, col, score) or (None, None, -inf) if no empty cell in region.
-        Structure: DIVIDE → RECURSE → COMBINE.
-        '''
+    def _dcInfluence(self, rowStart, rowEnd, colStart, colEnd, player):
+        """
+        Pure D&C: Recursively calculate player's territorial influence in a region.
+        Returns influence score (higher = more control).
+        """
         height = rowEnd - rowStart + 1
         width = colEnd - colStart + 1
-
-        # BASE CASE: subboard size ≤ 2×2 → evaluate all empty cells, return best (row, col, score)
+        
+        # BASE CASE: Small region - directly calculate influence
         if width <= 2 and height <= 2:
+            influence = 0
+            opponent = 1 if player == 2 else 2
+            
+            for r in range(rowStart, rowEnd + 1):
+                for c in range(colStart, colEnd + 1):
+                    if self.state[r][c] == player:
+                        # Own stone: strong influence
+                        influence += 3
+                        # Extra for goal-direction positioning
+                        if player == 2:  # Blue: favor horizontal spread
+                            influence += (1.0 - abs(c / self.size - 0.5)) * 2
+                        else:  # Red: favor vertical spread
+                            influence += (1.0 - abs(r / self.size - 0.5)) * 2
+                    elif self.state[r][c] == opponent:
+                        # Opponent stone: negative influence
+                        influence -= 2
+                    elif self.state[r][c] == 0:
+                        # Empty: potential territory based on nearby stones
+                        nearby_friendly = 0
+                        nearby_opponent = 0
+                        
+                        for dr in range(-1, 2):
+                            for dc in range(-1, 2):
+                                nr, nc = r + dr, c + dc
+                                if 0 <= nr < self.size and 0 <= nc < self.size:
+                                    if self.state[nr][nc] == player:
+                                        nearby_friendly += 1
+                                    elif self.state[nr][nc] == opponent:
+                                        nearby_opponent += 1
+                        
+                        influence += (nearby_friendly - nearby_opponent) * 0.3
+            
+            return influence
+        
+        # DIVIDE: Split into subregions
+        if width > height:
+            # Split vertically
+            mid = colStart + width // 2
+            left_influence = self._dcInfluence(rowStart, rowEnd, colStart, mid - 1, player)
+            right_influence = self._dcInfluence(rowStart, rowEnd, mid, colEnd, player)
+            
+            # COMBINE: Sum influences, bonus for having control in both regions
+            total = left_influence + right_influence
+            if left_influence > 0 and right_influence > 0:
+                total += 2  # Bonus for spread
+            return total
+        else:
+            # Split horizontally
+            mid = rowStart + height // 2
+            top_influence = self._dcInfluence(rowStart, mid - 1, colStart, colEnd, player)
+            bottom_influence = self._dcInfluence(mid, rowEnd, colStart, colEnd, player)
+            
+            # COMBINE: Sum influences
+            total = top_influence + bottom_influence
+            if top_influence > 0 and bottom_influence > 0:
+                total += 2  # Bonus for spread
+            return total
+
+    def _dcSolve(self, rowStart, rowEnd, colStart, colEnd):
+        height = rowEnd - rowStart + 1
+        width = colEnd - colStart + 1
+        
+        # BASE CASE: Small region - evaluate all cells
+        if width <= 3 and height <= 3:
             best_r, best_c, best_score = None, None, float('-inf')
             for r in range(rowStart, rowEnd + 1):
                 for c in range(colStart, colEnd + 1):
@@ -268,30 +344,23 @@ class Game:
                             best_score = score
                             best_r, best_c = r, c
             return (best_r, best_c, best_score)
-
-        # DIVIDE: choose split direction, then RECURSE on both halves, then COMBINE
+        
+        # DIVIDE: Split by larger dimension
         if width > height:
-            # Split vertically (by columns)
-            mid = colStart + (colEnd - colStart + 1) // 2
-            left_result = self._dcSolve(rowStart, rowEnd, colStart, mid - 1)   # RECURSE
-            right_result = self._dcSolve(rowStart, rowEnd, mid, colEnd)         # RECURSE
-            # COMBINE: return result with higher score
-            _, _, score_left = left_result
-            _, _, score_right = right_result
-            if score_right > score_left:
-                return right_result
-            return left_result
+            mid = colStart + width // 2
+            left_result = self._dcSolve(rowStart, rowEnd, colStart, mid - 1)
+            right_result = self._dcSolve(rowStart, rowEnd, mid, colEnd)
         else:
-            # Split horizontally (by rows)
-            mid = rowStart + (rowEnd - rowStart + 1) // 2
-            top_result = self._dcSolve(rowStart, mid - 1, colStart, colEnd)   # RECURSE
-            bottom_result = self._dcSolve(mid, rowEnd, colStart, colEnd)       # RECURSE
-            # COMBINE: return result with higher score
-            _, _, score_top = top_result
-            _, _, score_bottom = bottom_result
-            if score_bottom > score_top:
-                return bottom_result
-            return top_result
+            mid = rowStart + height // 2
+            top_result = self._dcSolve(rowStart, mid - 1, colStart, colEnd)
+            bottom_result = self._dcSolve(mid, rowEnd, colStart, colEnd)
+            left_result, right_result = top_result, bottom_result
+        
+        # COMBINE: Pick best move from either region
+        _, _, score_left = left_result
+        _, _, score_right = right_result
+        
+        return right_result if score_right > score_left else left_result
     
     def _cpuMoveDynamicProgramming(self):
         '''
