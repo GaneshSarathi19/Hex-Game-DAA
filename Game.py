@@ -473,4 +473,36 @@ class Game:
             # double processing
             pg.display.flip()
 
+    def GOScreen(self, winner):
+        '''shows game over screen, returns True if any key is hit'''
+        go = True
+        home = Button((W/2, 2*H/3), 50, 'Home', col=WHITE)
+        while go:
+            # sticking to fps
+            self.clock.tick(FPS)
+            # --------------------EVENTS---------------------
+            for event in pg.event.get():
+                if event.type == pg.QUIT:
+                    # if exit button is pressed
+                    return False
+                elif event.type == pg.MOUSEBUTTONDOWN:
+                    # if mouse is pressed check button overlapping
+                    if home.triggered():
+                        self.started = False
+                        return True
+            home.highlighted()
+            # --------------------STUFF-----------------------
+            self.screen.fill(self.bg_color)
+            self.showGrid()
+            self.shadow()
+            textOut(self.screen, 'GAME OVER', 80, ORANGE, (W/2, H/3))
+            if winner == 2:
+                textOut(self.screen, 'Blue won', 60, BLUE, (W/2, H/2))
+            else:
+                textOut(self.screen, 'Green won', 60, GREEN, (W/2, H/2))
+            home.show(self.screen)
+            # double processing
+            pg.display.flip()
+
+
     
