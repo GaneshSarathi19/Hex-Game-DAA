@@ -211,89 +211,59 @@ class Game:
             self.state[r][c] = 2
             self.move = 1  # Switch back to human player
     
-    def _dcScoreCell(self, r, c):
+    def _dcScoreCell(self, r, c, colStart, colEnd):
         """
-        Pure scoring - no traversal, just local checks and geometry.
+        SIMPLE scoring: Favor HORIZONTAL neighbors, discourage VERTICAL.
         """
         if self.state[r][c] != 0:
             return float('-inf')
         
-        score = 0.0
-        
-        # 1. Count immediate neighbors (O(1) check, not traversal)
-        left_neighbors = 0   # Neighbors to the left
-        right_neighbors = 0  # Neighbors to the right
-        total_neighbors = 0
+        # Count neighbors by direction
+        horizontal_neighbors = 0  # Left/right connections (good!)
+        vertical_neighbors = 0    # Up/down connections (bad for horizontal path!)
         
         for dr, dc in [(-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0)]:
             nr, nc = r + dr, c + dc
             if 0 <= nr < self.size and 0 <= nc < self.size:
                 if self.state[nr][nc] == 2:
-                    total_neighbors += 1
-                    if dc < 0:  # Neighbor is to the left
-                        left_neighbors += 1
-                    elif dc > 0:  # Neighbor is to the right
-                        right_neighbors += 1
+                    if dc != 0:
+                        # Column changes = horizontal neighbor
+                        horizontal_neighbors += 1
+                    else:
+                        # Only row changes = vertical neighbor
+                        vertical_neighbors += 1
         
-        # 2. Connectivity value
-        if total_neighbors == 0:
-            # No neighbors - only good as first move
-            score = 1.0
-        else:
-            # Has neighbors - good!
-            score += total_neighbors * 3.0
-            
-            # CRITICAL: Bonus if we connect LEFT and RIGHT
-            # This builds horizontal chains!
-            if left_neighbors > 0 and right_neighbors > 0:
-                score += 15.0  # Bridging left-right is key!
+        # Scoring: Horizontal good, vertical bad
+        score = horizontal_neighbors * 10.0  # Reward horizontal
+        score -= vertical_neighbors * 5.0     # Penalize vertical
         
-        # 3. Penalize vertical clustering (stones should spread horizontally)
-        vertical_neighbors = 0
-        for dr, dc in [(-1, 0), (1, 0)]:  # Only vertical directions
-            nr, nc = r + dr, c + dc
-            if 0 <= nr < self.size and 0 <= nc < self.size:
-                if self.state[nr][nc] == 2:
-                    vertical_neighbors += 1
-        score -= vertical_neighbors * 2.0  # Discourage vertical stacking
-        
-        # 4. Prefer middle rows (stable horizontal path)
-        row_distance_from_center = abs(r - self.size // 2)
-        score -= row_distance_from_center * 0.5
-        
-        # 5. Block opponent
-        opponent_count = 0
-        for dr, dc in [(-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0)]:
-            nr, nc = r + dr, c + dc
-            if 0 <= nr < self.size and 0 <= nc < self.size:
-                if self.state[nr][nc] == 1:
-                    opponent_count += 1
-        score += opponent_count * 1.5
+        # If no neighbors, prefer center columns
+        if horizontal_neighbors == 0 and vertical_neighbors == 0:
+            center_col = self.size // 2
+            score = 5.0 - abs(c - center_col) * 0.1
         
         return score
 
 
-    def _countStonesInRegion(self, rowStart, rowEnd, colStart, colEnd, player):
+        #---------main D&C logic------------
+    
+    def _cpuMoveDivideConquer(self):
         """
-        Pure counting - no traversal, just iterate and count.
-        Returns: (total_stones, leftmost_col, rightmost_col)
+        Main entry point.
         """
-        count = 0
-        leftmost = self.size
-        rightmost = -1
+        result = self._dcSolve(0, self.size - 1, 0, self.size - 1)
+        r, c, _ = result
+        if r is not None and c is not None and self.state[r][c] == 0:
+            self.state[r][c] = 2
+            self.move = 1
+            return
         
-        for r in range(rowStart, rowEnd + 1):
-            for c in range(colStart, colEnd + 1):
-                if self.state[r][c] == player:
-                    count += 1
-                    leftmost = min(leftmost, c)
-                    rightmost = max(rightmost, c)
-        
-        if count == 0:
-            leftmost = -1
-            rightmost = -1
-        
-        return (count, leftmost, rightmost)
+        for ri in range(self.size):
+            for cj in range(self.size):
+                if self.state[ri][cj] == 0:
+                    self.state[ri][cj] = 2
+                    self.move = 1
+                    return
     
     def _cpuMoveDynamicProgramming(self):
         '''
