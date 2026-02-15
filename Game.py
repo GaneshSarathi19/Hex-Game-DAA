@@ -211,156 +211,89 @@ class Game:
             self.state[r][c] = 2
             self.move = 1  # Switch back to human player
     
-    def _cpuMoveDivideConquer(self):
-        '''
-        Divide & Conquer AI: True recursive DIVIDE → RECURSE → COMBINE.
-        Returns best move (row, col) for CPU (Blue) from full board.
-        '''
-        result = self._dcSolve(0, self.size - 1, 0, self.size - 1)
-        r, c, _ = result
-        if r is not None and c is not None and self.state[r][c] == 0:
-            self.state[r][c] = 2
-            self.move = 1
-            return
-        # Fallback: if D&C returned no valid move, use first empty
-        for ri in range(self.size):
-            for cj in range(self.size):
-                if self.state[ri][cj] == 0:
-                    self.state[ri][cj] = 2
-                    self.move = 1
-                    return
-    
     def _dcScoreCell(self, r, c):
+        """
+        Pure scoring - no traversal, just local checks and geometry.
+        """
         if self.state[r][c] != 0:
             return float('-inf')
         
-        # Temporarily place stone
-        self.state[r][c] = 2
+        score = 0.0
         
-        # Evaluate using pure D&C territory/influence calculation
-        blue_influence = self._dcInfluence(0, self.size - 1, 0, self.size - 1, 2)
-        red_influence = self._dcInfluence(0, self.size - 1, 0, self.size - 1, 1)
+        # 1. Count immediate neighbors (O(1) check, not traversal)
+        left_neighbors = 0   # Neighbors to the left
+        right_neighbors = 0  # Neighbors to the right
+        total_neighbors = 0
         
-        # Remove stone
-        self.state[r][c] = 0
-        
-        # Score based on influence gain
-        score = blue_influence - red_influence
-        
-        # Bonus for horizontal position (Blue connects left-right)
-        horizontal_progress = c / (self.size - 1)  # 0.0 at left, 1.0 at right
-        score += (0.5 - abs(horizontal_progress - 0.5)) * 2  # Peak at center
-        
-        # Connectivity bonus
-        friendly = 0
         for dr, dc in [(-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0)]:
             nr, nc = r + dr, c + dc
-            if 0 <= nr < self.size and 0 <= nc < self.size and self.state[nr][nc] == 2:
-                friendly += 1
-        score += friendly * 0.5
+            if 0 <= nr < self.size and 0 <= nc < self.size:
+                if self.state[nr][nc] == 2:
+                    total_neighbors += 1
+                    if dc < 0:  # Neighbor is to the left
+                        left_neighbors += 1
+                    elif dc > 0:  # Neighbor is to the right
+                        right_neighbors += 1
+        
+        # 2. Connectivity value
+        if total_neighbors == 0:
+            # No neighbors - only good as first move
+            score = 1.0
+        else:
+            # Has neighbors - good!
+            score += total_neighbors * 3.0
+            
+            # CRITICAL: Bonus if we connect LEFT and RIGHT
+            # This builds horizontal chains!
+            if left_neighbors > 0 and right_neighbors > 0:
+                score += 15.0  # Bridging left-right is key!
+        
+        # 3. Penalize vertical clustering (stones should spread horizontally)
+        vertical_neighbors = 0
+        for dr, dc in [(-1, 0), (1, 0)]:  # Only vertical directions
+            nr, nc = r + dr, c + dc
+            if 0 <= nr < self.size and 0 <= nc < self.size:
+                if self.state[nr][nc] == 2:
+                    vertical_neighbors += 1
+        score -= vertical_neighbors * 2.0  # Discourage vertical stacking
+        
+        # 4. Prefer middle rows (stable horizontal path)
+        row_distance_from_center = abs(r - self.size // 2)
+        score -= row_distance_from_center * 0.5
+        
+        # 5. Block opponent
+        opponent_count = 0
+        for dr, dc in [(-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0)]:
+            nr, nc = r + dr, c + dc
+            if 0 <= nr < self.size and 0 <= nc < self.size:
+                if self.state[nr][nc] == 1:
+                    opponent_count += 1
+        score += opponent_count * 1.5
         
         return score
 
-    def _dcInfluence(self, rowStart, rowEnd, colStart, colEnd, player):
-        """
-        Pure D&C: Recursively calculate player's territorial influence in a region.
-        Returns influence score (higher = more control).
-        """
-        height = rowEnd - rowStart + 1
-        width = colEnd - colStart + 1
-        
-        # BASE CASE: Small region - directly calculate influence
-        if width <= 2 and height <= 2:
-            influence = 0
-            opponent = 1 if player == 2 else 2
-            
-            for r in range(rowStart, rowEnd + 1):
-                for c in range(colStart, colEnd + 1):
-                    if self.state[r][c] == player:
-                        # Own stone: strong influence
-                        influence += 3
-                        # Extra for goal-direction positioning
-                        if player == 2:  # Blue: favor horizontal spread
-                            influence += (1.0 - abs(c / self.size - 0.5)) * 2
-                        else:  # Red: favor vertical spread
-                            influence += (1.0 - abs(r / self.size - 0.5)) * 2
-                    elif self.state[r][c] == opponent:
-                        # Opponent stone: negative influence
-                        influence -= 2
-                    elif self.state[r][c] == 0:
-                        # Empty: potential territory based on nearby stones
-                        nearby_friendly = 0
-                        nearby_opponent = 0
-                        
-                        for dr in range(-1, 2):
-                            for dc in range(-1, 2):
-                                nr, nc = r + dr, c + dc
-                                if 0 <= nr < self.size and 0 <= nc < self.size:
-                                    if self.state[nr][nc] == player:
-                                        nearby_friendly += 1
-                                    elif self.state[nr][nc] == opponent:
-                                        nearby_opponent += 1
-                        
-                        influence += (nearby_friendly - nearby_opponent) * 0.3
-            
-            return influence
-        
-        # DIVIDE: Split into subregions
-        if width > height:
-            # Split vertically
-            mid = colStart + width // 2
-            left_influence = self._dcInfluence(rowStart, rowEnd, colStart, mid - 1, player)
-            right_influence = self._dcInfluence(rowStart, rowEnd, mid, colEnd, player)
-            
-            # COMBINE: Sum influences, bonus for having control in both regions
-            total = left_influence + right_influence
-            if left_influence > 0 and right_influence > 0:
-                total += 2  # Bonus for spread
-            return total
-        else:
-            # Split horizontally
-            mid = rowStart + height // 2
-            top_influence = self._dcInfluence(rowStart, mid - 1, colStart, colEnd, player)
-            bottom_influence = self._dcInfluence(mid, rowEnd, colStart, colEnd, player)
-            
-            # COMBINE: Sum influences
-            total = top_influence + bottom_influence
-            if top_influence > 0 and bottom_influence > 0:
-                total += 2  # Bonus for spread
-            return total
 
-    def _dcSolve(self, rowStart, rowEnd, colStart, colEnd):
-        height = rowEnd - rowStart + 1
-        width = colEnd - colStart + 1
+    def _countStonesInRegion(self, rowStart, rowEnd, colStart, colEnd, player):
+        """
+        Pure counting - no traversal, just iterate and count.
+        Returns: (total_stones, leftmost_col, rightmost_col)
+        """
+        count = 0
+        leftmost = self.size
+        rightmost = -1
         
-        # BASE CASE: Small region - evaluate all cells
-        if width <= 3 and height <= 3:
-            best_r, best_c, best_score = None, None, float('-inf')
-            for r in range(rowStart, rowEnd + 1):
-                for c in range(colStart, colEnd + 1):
-                    if self.state[r][c] == 0:
-                        score = self._dcScoreCell(r, c)
-                        if score > best_score:
-                            best_score = score
-                            best_r, best_c = r, c
-            return (best_r, best_c, best_score)
+        for r in range(rowStart, rowEnd + 1):
+            for c in range(colStart, colEnd + 1):
+                if self.state[r][c] == player:
+                    count += 1
+                    leftmost = min(leftmost, c)
+                    rightmost = max(rightmost, c)
         
-        # DIVIDE: Split by larger dimension
-        if width > height:
-            mid = colStart + width // 2
-            left_result = self._dcSolve(rowStart, rowEnd, colStart, mid - 1)
-            right_result = self._dcSolve(rowStart, rowEnd, mid, colEnd)
-        else:
-            mid = rowStart + height // 2
-            top_result = self._dcSolve(rowStart, mid - 1, colStart, colEnd)
-            bottom_result = self._dcSolve(mid, rowEnd, colStart, colEnd)
-            left_result, right_result = top_result, bottom_result
+        if count == 0:
+            leftmost = -1
+            rightmost = -1
         
-        # COMBINE: Pick best move from either region
-        _, _, score_left = left_result
-        _, _, score_right = right_result
-        
-        return right_result if score_right > score_left else left_result
+        return (count, leftmost, rightmost)
     
     def _cpuMoveDynamicProgramming(self):
         '''
