@@ -245,8 +245,65 @@ class Game:
         return score
 
 
-        #---------main D&C logic------------
-    
+    def _dcSolve(self, rowStart, rowEnd, colStart, colEnd):
+        """
+        Simple D&C - unchanged.
+        """
+        height = rowEnd - rowStart + 1
+        width = colEnd - colStart + 1
+        
+        # BASE CASE
+        if width <= 4 or height <= 4:
+            best_r, best_c, best_score = None, None, float('-inf')
+            for r in range(rowStart, rowEnd + 1):
+                for c in range(colStart, colEnd + 1):
+                    if self.state[r][c] == 0:
+                        score = self._dcScoreCell(r, c, colStart, colEnd)
+                        if score > best_score:
+                            best_score = score
+                            best_r, best_c = r, c
+            return (best_r, best_c, best_score)
+        
+        # DIVIDE
+        mid_col = colStart + width // 2
+        
+        if mid_col <= colStart or mid_col > colEnd:
+            best_r, best_c, best_score = None, None, float('-inf')
+            for r in range(rowStart, rowEnd + 1):
+                for c in range(colStart, colEnd + 1):
+                    if self.state[r][c] == 0:
+                        score = self._dcScoreCell(r, c, colStart, colEnd)
+                        if score > best_score:
+                            best_score = score
+                            best_r, best_c = r, c
+            return (best_r, best_c, best_score)
+        
+        # CONQUER
+        left_result = self._dcSolve(rowStart, rowEnd, colStart, mid_col - 1)
+        right_result = self._dcSolve(rowStart, rowEnd, mid_col, colEnd)
+        
+        r_left, c_left, score_left = left_result
+        r_right, c_right, score_right = right_result
+        
+        # COMBINE
+        has_left = any(self.state[r][c] == 2 
+                    for r in range(self.size) 
+                    for c in range(colStart, min(mid_col, self.size)))
+        
+        has_right = any(self.state[r][c] == 2 
+                        for r in range(self.size) 
+                        for c in range(max(mid_col, 0), min(colEnd + 1, self.size)))
+        
+        if not has_left and not has_right:
+            return right_result if score_right > score_left else left_result
+        elif has_left and not has_right:
+            return right_result if r_right is not None else left_result
+        elif has_right and not has_left:
+            return left_result if r_left is not None else right_result
+        else:
+            return right_result if score_right > score_left else left_result
+
+
     def _cpuMoveDivideConquer(self):
         """
         Main entry point.
@@ -416,33 +473,4 @@ class Game:
             # double processing
             pg.display.flip()
 
-    def GOScreen(self, winner):
-        '''shows game over screen, returns True if any key is hit'''
-        go = True
-        home = Button((W/2, 2*H/3), 50, 'Home', col=WHITE)
-        while go:
-            # sticking to fps
-            self.clock.tick(FPS)
-            # --------------------EVENTS---------------------
-            for event in pg.event.get():
-                if event.type == pg.QUIT:
-                    # if exit button is pressed
-                    return False
-                elif event.type == pg.MOUSEBUTTONDOWN:
-                    # if mouse is pressed check button overlapping
-                    if home.triggered():
-                        self.started = False
-                        return True
-            home.highlighted()
-            # --------------------STUFF-----------------------
-            self.screen.fill(self.bg_color)
-            self.showGrid()
-            self.shadow()
-            textOut(self.screen, 'GAME OVER', 80, ORANGE, (W/2, H/3))
-            if winner == 2:
-                textOut(self.screen, 'Blue won', 60, BLUE, (W/2, H/2))
-            else:
-                textOut(self.screen, 'Green won', 60, GREEN, (W/2, H/2))
-            home.show(self.screen)
-            # double processing
-            pg.display.flip()
+   
