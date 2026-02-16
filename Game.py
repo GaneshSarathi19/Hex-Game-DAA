@@ -376,6 +376,109 @@ class Game:
                 # DP recurrence
                 if min_prev < INF:
                     dp_left[r][c] = min_prev + cell_cost
+        
+        
+        # DP TABLE 2: dp_right[r][c] - Distance from (r,c) to RIGHT
+        
+        
+        dp_right = [[INF] * n for _ in range(n)]
+        
+        # Base case: RIGHT edge (column n-1)
+        for r in range(n):
+            if self.state[r][n-1] == 2:
+                dp_right[r][n-1] = 0
+            elif self.state[r][n-1] == 0:
+                dp_right[r][n-1] = 1
+            else:
+                dp_right[r][n-1] = INF
+        
+        # Fill table column by column (right to left)
+        for c in range(n - 2, -1, -1):
+            for r in range(n):
+                # Skip opponent cells
+                if self.state[r][c] == 1:
+                    continue
+                
+                # Cost of current cell
+                if self.state[r][c] == 2:
+                    cell_cost = 0
+                else:
+                    cell_cost = 1
+                
+                # Find minimum cost to next positions
+                # Hexagonal neighbors that (r,c) can reach
+                min_next = INF
+                for dr, dc in [(-1, 0), (-1, 1), (0, 1), (1, 0), (1, 1)]:
+                    nr = r + dr
+                    nc = c + dc
+                    if 0 <= nr < n and 0 <= nc < n:
+                        min_next = min(min_next, dp_right[nr][nc])
+                
+                # DP recurrence
+                if min_next < INF:
+                    dp_right[r][c] = min_next + cell_cost
+        
+        
+        # DECISION: Find best empty cell to play
+        
+        
+        best_r, best_c = None, None
+        best_total = INF
+        
+        for r in range(n):
+            for c in range(n):
+                if self.state[r][c] != 0:
+                    continue  # Not empty
+                
+                
+                # Path = (LEFT → this cell) + (this cell → RIGHT)
+                
+                
+                # Best distance TO this cell (from left neighbors)
+                dist_to = INF
+                for dr, dc in [(-1, -1), (-1, 0), (0, -1), (1, -1), (1, 0)]:
+                    pr = r + dr
+                    pc = c + dc
+                    if 0 <= pr < n and 0 <= pc < n:
+                        dist_to = min(dist_to, dp_left[pr][pc])
+                
+                # Special case: if this is in column 0
+                if c == 0:
+                    dist_to = 0
+                
+                # Best distance FROM this cell (to right neighbors)
+                dist_from = INF
+                for dr, dc in [(-1, 0), (-1, 1), (0, 1), (1, 0), (1, 1)]:
+                    nr = r + dr
+                    nc = c + dc
+                    if 0 <= nr < n and 0 <= nc < n:
+                        dist_from = min(dist_from, dp_right[nr][nc])
+                
+                # Special case: if this is in column n-1
+                if c == n - 1:
+                    dist_from = 0
+                
+                # Total path length if we play here (this cell = 0 cost)
+                total = dist_to + 0 + dist_from
+                
+                # Track minimum
+                if total < best_total:
+                    best_total = total
+                    best_r, best_c = r, c
+        
+        # Make the move
+        if best_r is not None:
+            self.state[best_r][best_c] = 2
+            self.move = 1
+            return
+        
+        # Fallback: no valid move found (shouldn't happen)
+        for r in range(n):
+            for c in range(n):
+                if self.state[r][c] == 0:
+                    self.state[r][c] = 2
+                    self.move = 1
+                    return
 
     def shadow(self):
         shadow = pg.Surface((W, H))
