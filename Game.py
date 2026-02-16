@@ -324,11 +324,58 @@ class Game:
     
     def _cpuMoveDynamicProgramming(self):
         '''
-        Dynamic Programming AI: Placeholder for future implementation.
-        Currently does nothing.
+        Pure DP Table Solution using bidirectional shortest path.
+        
+        DP Tables:
+        1. dp_left[r][c] = minimum cost to reach (r,c) from LEFT edge
+        2. dp_right[r][c] = minimum cost from (r,c) to RIGHT edge
+        3. Combine: Pick empty cell that minimizes total path length
+        
+        Complexity: O(n²)
         '''
-        # TODO: Implement Dynamic Programming algorithm
-        pass
+        n = self.size
+        INF = 10 ** 9
+        
+        
+        # DP TABLE 1: dp_left[r][c] - Distance from LEFT to (r,c)
+        
+        
+        dp_left = [[INF] * n for _ in range(n)]
+        
+        # Base case: LEFT edge (column 0)
+        for r in range(n):
+            if self.state[r][0] == 2:
+                dp_left[r][0] = 0  # Our stone - free
+            elif self.state[r][0] == 0:
+                dp_left[r][0] = 1  # Empty - costs 1
+            else:
+                dp_left[r][0] = INF  # Opponent - blocked
+        
+        # Fill table column by column (left to right)
+        for c in range(1, n):
+            for r in range(n):
+                # Skip opponent cells
+                if self.state[r][c] == 1:
+                    continue
+                
+                # Cost of current cell
+                if self.state[r][c] == 2:
+                    cell_cost = 0
+                else:
+                    cell_cost = 1
+                
+                # Find minimum cost from previous positions
+                # Hexagonal neighbors that could lead to (r,c)
+                min_prev = INF
+                for dr, dc in [(-1, -1), (-1, 0), (0, -1), (1, -1), (1, 0)]:
+                    pr = r + dr
+                    pc = c + dc
+                    if 0 <= pr < n and 0 <= pc < n:
+                        min_prev = min(min_prev, dp_left[pr][pc])
+                
+                # DP recurrence
+                if min_prev < INF:
+                    dp_left[r][c] = min_prev + cell_cost
 
     def shadow(self):
         shadow = pg.Surface((W, H))
