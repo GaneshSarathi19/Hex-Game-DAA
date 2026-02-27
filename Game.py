@@ -136,6 +136,8 @@ class Game:
             self._cpuMoveDivideConquer()
         elif self.ai_mode == 'DP':
             self._cpuMoveDynamicProgramming()
+        elif self.ai_mode == 'Backtracking':
+            self._cpuMoveBacktracking()
         else:  # Default fallback to Greedy
             self._cpuMoveGreedy()
     
@@ -210,96 +212,281 @@ class Game:
             r, c = best_move
             self.state[r][c] = 2
             self.move = 1  # Switch back to human player
+
+    def _cpuMoveBacktracking(self):
+        '''
+        Backtracking logic
+        '''
+        self.move = 1
     
+    def _dcScoreCell(self, r, c, colStart, colEnd):
+        """
+        SIMPLE scoring: Favor HORIZONTAL neighbors, discourage VERTICAL.
+        """
+        if self.state[r][c] != 0:
+            return float('-inf')
+        
+        # Count neighbors by direction
+        horizontal_neighbors = 0  # Left/right connections (good!)
+        vertical_neighbors = 0    # Up/down connections (bad for horizontal path!)
+        
+        for dr, dc in [(-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0)]:
+            nr, nc = r + dr, c + dc
+            if 0 <= nr < self.size and 0 <= nc < self.size:
+                if self.state[nr][nc] == 2:
+                    if dc != 0:
+                        # Column changes = horizontal neighbor
+                        horizontal_neighbors += 1
+                    else:
+                        # Only row changes = vertical neighbor
+                        vertical_neighbors += 1
+        
+        # Scoring: Horizontal good, vertical bad
+        score = horizontal_neighbors * 10.0  # Reward horizontal
+        score -= vertical_neighbors * 5.0     # Penalize vertical
+        
+        # If no neighbors, prefer center columns
+        if horizontal_neighbors == 0 and vertical_neighbors == 0:
+            center_col = self.size // 2
+            score = 5.0 - abs(c - center_col) * 0.1
+        
+        return score
+
+
+    def _dcSolve(self, rowStart, rowEnd, colStart, colEnd):
+        """
+        Simple D&C - unchanged.
+        """
+        height = rowEnd - rowStart + 1
+        width = colEnd - colStart + 1
+        
+        # BASE CASE
+        if width <= 4 or height <= 4:
+            best_r, best_c, best_score = None, None, float('-inf')
+            for r in range(rowStart, rowEnd + 1):
+                for c in range(colStart, colEnd + 1):
+                    if self.state[r][c] == 0:
+                        score = self._dcScoreCell(r, c, colStart, colEnd)
+                        if score > best_score:
+                            best_score = score
+                            best_r, best_c = r, c
+            return (best_r, best_c, best_score)
+        
+        # DIVIDE
+        mid_col = colStart + width // 2
+        
+        if mid_col <= colStart or mid_col > colEnd:
+            best_r, best_c, best_score = None, None, float('-inf')
+            for r in range(rowStart, rowEnd + 1):
+                for c in range(colStart, colEnd + 1):
+                    if self.state[r][c] == 0:
+                        score = self._dcScoreCell(r, c, colStart, colEnd)
+                        if score > best_score:
+                            best_score = score
+                            best_r, best_c = r, c
+            return (best_r, best_c, best_score)
+        
+        # CONQUER
+        left_result = self._dcSolve(rowStart, rowEnd, colStart, mid_col - 1)
+        right_result = self._dcSolve(rowStart, rowEnd, mid_col, colEnd)
+        
+        r_left, c_left, score_left = left_result
+        r_right, c_right, score_right = right_result
+        
+        # COMBINE
+        has_left = any(self.state[r][c] == 2 
+                    for r in range(self.size) 
+                    for c in range(colStart, min(mid_col, self.size)))
+        
+        has_right = any(self.state[r][c] == 2 
+                        for r in range(self.size) 
+                        for c in range(max(mid_col, 0), min(colEnd + 1, self.size)))
+        
+        if not has_left and not has_right:
+            return right_result if score_right > score_left else left_result
+        elif has_left and not has_right:
+            return right_result if r_right is not None else left_result
+        elif has_right and not has_left:
+            return left_result if r_left is not None else right_result
+        else:
+            return right_result if score_right > score_left else left_result
+
+
     def _cpuMoveDivideConquer(self):
-        '''
-        Divide & Conquer AI: True recursive DIVIDE -> RECURSE -> COMBINE.
-        Returns best move (row, col) for CPU (Blue) from full board.
-        '''
+        """
+        Main entry point.
+        """
         result = self._dcSolve(0, self.size - 1, 0, self.size - 1)
         r, c, _ = result
         if r is not None and c is not None and self.state[r][c] == 0:
             self.state[r][c] = 2
             self.move = 1
             return
-        # Fallback: if D&C returned no valid move (e.g. base case had no empty cell), use first empty
+        
         for ri in range(self.size):
             for cj in range(self.size):
                 if self.state[ri][cj] == 0:
                     self.state[ri][cj] = 2
                     self.move = 1
                     return
-
-    def _dcScoreCell(self, r, c):
-        '''
-        Score a single empty cell for CPU (Blue).
-        score = closeness_to_goal + friendly_neighbors - opponent_neighbors
-        '''
-        # Blue connects left (col 0) to right (col size-1)
-        closeness_to_goal = (self.size - 1) - min(c, self.size - 1 - c)
-        friendly = 0
-        opponent = 0
-        for move in moves:
-            nr, nc = r + move.X, c + move.Y
-            if 0 <= nr < self.size and 0 <= nc < self.size:
-                if self.state[nr][nc] == 2:
-                    friendly += 1
-                elif self.state[nr][nc] == 1:
-                    opponent += 1
-        return closeness_to_goal + friendly - opponent
-
-    def _dcSolve(self, rowStart, rowEnd, colStart, colEnd):
-        '''
-        Recursive D&C: takes subboard boundaries [rowStart..rowEnd], [colStart..colEnd].
-        Returns (row, col, score) or (None, None, -inf) if no empty cell in region.
-        Structure: DIVIDE → RECURSE → COMBINE.
-        '''
-        height = rowEnd - rowStart + 1
-        width = colEnd - colStart + 1
-
-        # BASE CASE: subboard size ≤ 2×2 → evaluate all empty cells, return best (row, col, score)
-        if width <= 2 and height <= 2:
-            best_r, best_c, best_score = None, None, float('-inf')
-            for r in range(rowStart, rowEnd + 1):
-                for c in range(colStart, colEnd + 1):
-                    if self.state[r][c] == 0:
-                        score = self._dcScoreCell(r, c)
-                        if score > best_score:
-                            best_score = score
-                            best_r, best_c = r, c
-            return (best_r, best_c, best_score)
-
-        # DIVIDE: choose split direction, then RECURSE on both halves, then COMBINE
-        if width > height:
-            # Split vertically (by columns)
-            mid = colStart + (colEnd - colStart + 1) // 2
-            left_result = self._dcSolve(rowStart, rowEnd, colStart, mid - 1)   # RECURSE
-            right_result = self._dcSolve(rowStart, rowEnd, mid, colEnd)         # RECURSE
-            # COMBINE: return result with higher score
-            _, _, score_left = left_result
-            _, _, score_right = right_result
-            if score_right > score_left:
-                return right_result
-            return left_result
-        else:
-            # Split horizontally (by rows)
-            mid = rowStart + (rowEnd - rowStart + 1) // 2
-            top_result = self._dcSolve(rowStart, mid - 1, colStart, colEnd)   # RECURSE
-            bottom_result = self._dcSolve(mid, rowEnd, colStart, colEnd)       # RECURSE
-            # COMBINE: return result with higher score
-            _, _, score_top = top_result
-            _, _, score_bottom = bottom_result
-            if score_bottom > score_top:
-                return bottom_result
-            return top_result
     
     def _cpuMoveDynamicProgramming(self):
         '''
-        Dynamic Programming AI: Placeholder for future implementation.
-        Currently does nothing.
+        Pure DP Table Solution using bidirectional shortest path.
+        
+        DP Tables:
+        1. dp_left[r][c] = minimum cost to reach (r,c) from LEFT edge
+        2. dp_right[r][c] = minimum cost from (r,c) to RIGHT edge
+        3. Combine: Pick empty cell that minimizes total path length
+        
+        Complexity: O(n²)
         '''
-        # TODO: Implement Dynamic Programming algorithm
-        pass
+        n = self.size
+        INF = 10 ** 9
+        
+        
+        # DP TABLE 1: dp_left[r][c] - Distance from LEFT to (r,c)
+        
+        
+        dp_left = [[INF] * n for _ in range(n)]
+        
+        # Base case: LEFT edge (column 0)
+        for r in range(n):
+            if self.state[r][0] == 2:
+                dp_left[r][0] = 0  # Our stone - free
+            elif self.state[r][0] == 0:
+                dp_left[r][0] = 1  # Empty - costs 1
+            else:
+                dp_left[r][0] = INF  # Opponent - blocked
+        
+        # Fill table column by column (left to right)
+        for c in range(1, n):
+            for r in range(n):
+                # Skip opponent cells
+                if self.state[r][c] == 1:
+                    continue
+                
+                # Cost of current cell
+                if self.state[r][c] == 2:
+                    cell_cost = 0
+                else:
+                    cell_cost = 1
+                
+                # Find minimum cost from previous positions
+                # Hexagonal neighbors that could lead to (r,c)
+                min_prev = INF
+                for dr, dc in [(-1, -1), (-1, 0), (0, -1), (1, -1), (1, 0)]:
+                    pr = r + dr
+                    pc = c + dc
+                    if 0 <= pr < n and 0 <= pc < n:
+                        min_prev = min(min_prev, dp_left[pr][pc])
+                
+                # DP recurrence
+                if min_prev < INF:
+                    dp_left[r][c] = min_prev + cell_cost
+        
+        
+        # DP TABLE 2: dp_right[r][c] - Distance from (r,c) to RIGHT
+        
+        
+        dp_right = [[INF] * n for _ in range(n)]
+        
+        # Base case: RIGHT edge (column n-1)
+        for r in range(n):
+            if self.state[r][n-1] == 2:
+                dp_right[r][n-1] = 0
+            elif self.state[r][n-1] == 0:
+                dp_right[r][n-1] = 1
+            else:
+                dp_right[r][n-1] = INF
+        
+        # Fill table column by column (right to left)
+        for c in range(n - 2, -1, -1):
+            for r in range(n):
+                # Skip opponent cells
+                if self.state[r][c] == 1:
+                    continue
+                
+                # Cost of current cell
+                if self.state[r][c] == 2:
+                    cell_cost = 0
+                else:
+                    cell_cost = 1
+                
+                # Find minimum cost to next positions
+                # Hexagonal neighbors that (r,c) can reach
+                min_next = INF
+                for dr, dc in [(-1, 0), (-1, 1), (0, 1), (1, 0), (1, 1)]:
+                    nr = r + dr
+                    nc = c + dc
+                    if 0 <= nr < n and 0 <= nc < n:
+                        min_next = min(min_next, dp_right[nr][nc])
+                
+                # DP recurrence
+                if min_next < INF:
+                    dp_right[r][c] = min_next + cell_cost
+        
+        
+        # DECISION: Find best empty cell to play
+        
+        
+        best_r, best_c = None, None
+        best_total = INF
+        
+        for r in range(n):
+            for c in range(n):
+                if self.state[r][c] != 0:
+                    continue  # Not empty
+                
+                
+                # Path = (LEFT → this cell) + (this cell → RIGHT)
+                
+                
+                # Best distance TO this cell (from left neighbors)
+                dist_to = INF
+                for dr, dc in [(-1, -1), (-1, 0), (0, -1), (1, -1), (1, 0)]:
+                    pr = r + dr
+                    pc = c + dc
+                    if 0 <= pr < n and 0 <= pc < n:
+                        dist_to = min(dist_to, dp_left[pr][pc])
+                
+                # Special case: if this is in column 0
+                if c == 0:
+                    dist_to = 0
+                
+                # Best distance FROM this cell (to right neighbors)
+                dist_from = INF
+                for dr, dc in [(-1, 0), (-1, 1), (0, 1), (1, 0), (1, 1)]:
+                    nr = r + dr
+                    nc = c + dc
+                    if 0 <= nr < n and 0 <= nc < n:
+                        dist_from = min(dist_from, dp_right[nr][nc])
+                
+                # Special case: if this is in column n-1
+                if c == n - 1:
+                    dist_from = 0
+                
+                # Total path length if we play here (this cell = 0 cost)
+                total = dist_to + 0 + dist_from
+                
+                # Track minimum
+                if total < best_total:
+                    best_total = total
+                    best_r, best_c = r, c
+        
+        # Make the move
+        if best_r is not None:
+            self.state[best_r][best_c] = 2
+            self.move = 1
+            return
+        
+        # Fallback: no valid move found (shouldn't happen)
+        for r in range(n):
+            for c in range(n):
+                if self.state[r][c] == 0:
+                    self.state[r][c] = 2
+                    self.move = 1
+                    return
 
     def shadow(self):
         shadow = pg.Surface((W, H))
@@ -314,16 +501,18 @@ class Game:
         # Layout: fit 600x600 with even spacing and margins
         margin = 50
         title_y = 70
-        # Strategy options in a single row (centered, balanced)
+        # Strategy options (centered, balanced)
         grid_center_x = W / 2
         strategy_y = 220
+        strategy_y2 = 290
         btn_size = 42
         btn_spacing = 140  # Spacing between buttons
 
         greedy_btn = Button((grid_center_x - btn_spacing, strategy_y), btn_size, 'Greedy', col=GREEN)
         dnc_btn = Button((grid_center_x, strategy_y), btn_size, 'D&C', col=LIGHTBLUE)
         dp_btn = Button((grid_center_x + btn_spacing, strategy_y), btn_size, 'DP', col=YELLOW)
-        mode_buttons = [greedy_btn, dnc_btn, dp_btn]
+        backtracking_btn = Button((grid_center_x, strategy_y2), btn_size, 'Backtracking', col=ORANGE)
+        mode_buttons = [greedy_btn, dnc_btn, dp_btn, backtracking_btn]
 
         play_y = 400
         rules_y = 480
@@ -343,6 +532,8 @@ class Game:
                         selected_ai_mode = 'D&C'
                     elif dp_btn.triggered():
                         selected_ai_mode = 'DP'
+                    elif backtracking_btn.triggered():
+                        selected_ai_mode = 'Backtracking'
                     if play.triggered():
                         self.__init__(self.size)
                         self.ai_mode = selected_ai_mode
@@ -367,8 +558,9 @@ class Game:
                 'Greedy': (grid_center_x - btn_spacing, strategy_y),
                 'D&C': (grid_center_x, strategy_y),
                 'DP': (grid_center_x + btn_spacing, strategy_y),
+                'Backtracking': (grid_center_x, strategy_y2),
             }
-            strategy_colors = {'Greedy': GREEN, 'D&C': LIGHTBLUE, 'DP': YELLOW}
+            strategy_colors = {'Greedy': GREEN, 'D&C': LIGHTBLUE, 'DP': YELLOW, 'Backtracking': ORANGE}
             sx, sy = strategy_pos[selected_ai_mode]
             pg.draw.rect(self.screen, strategy_colors[selected_ai_mode],
                          (sx - 62, sy - 22, 124, 44), 2)
