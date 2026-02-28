@@ -387,6 +387,135 @@ class Game:
                         self.move = 1
                         return
             return
+        
+        # ---------- STEP 4: Backtracking evaluation ----------
+        safe_moves = []
+        evaluated = []  # (r, c, risk_score, local_score)
+
+        center_r = (n - 1) / 2.0
+        center_c = (n - 1) / 2.0
+
+        def generate_human_forcing_replies():
+            replies = set()
+            # Empty cells adjacent to human stones
+            for r in range(n):
+                for c in range(n):
+                    if board[r][c] == 1:
+                        for nr, nc in neighbors(r, c):
+                            if board[nr][nc] == 0:
+                                replies.add((nr, nc))
+
+            # Carrier cells of human virtual connections
+            local_connections = detectVirtualConnections(board, player=1)
+            for conn in local_connections:
+                for r, c in conn:
+                    if board[r][c] == 0:
+                        replies.add((r, c))
+
+            return list(replies)
+
+        for r, c in candidates:
+            if board[r][c] != 0:
+                continue
+
+            # Hypothetically place CPU stone
+            board[r][c] = 2
+
+            replies = generate_human_forcing_replies()
+            is_safe = True
+            risk_score = 0
+
+            for hr, hc in replies:
+                if board[hr][hc] != 0:
+                    continue
+
+                # Human reply
+                board[hr][hc] = 1
+                # Check if human now has any virtual connection OR an actual win
+                after_conns = detectVirtualConnections(board, player=1)
+                threat = len(after_conns)
+                # Also treat a real connection (win) as a strong threat
+                human_wins = (self.checkWin() == 1)
+                if human_wins:
+                    threat = max(threat, 2)
+
+                if threat > 0:
+                    is_safe = False
+                risk_score = max(risk_score, threat)
+                # Undo human move
+                board[hr][hc] = 0
+
+                if not is_safe:
+                    # We already know this move allows a forcing virtual connection.
+                    break
+
+            # Undo CPU hypothetical move
+            board[r][c] = 0
+
+            # Local heuristic score (prefer central, connection-extending)
+            neighbor_cpu = 0
+            neighbor_human = 0
+            for nr, nc in neighbors(r, c):
+                if board[nr][nc] == 2:
+                    neighbor_cpu += 1
+                elif board[nr][nc] == 1:
+                    neighbor_human += 1
+
+            # Smaller distance to center is better.
+            dist_center = abs(r - center_r) + abs(c - center_c)
+            local_score = neighbor_cpu * 10 - neighbor_human * 2 - dist_center
+
+            if is_safe:
+                safe_moves.append((r, c, local_score))
+            evaluated.append((r, c, risk_score, local_score))
+
+        # ---------- STEP 5: Select move ----------
+        chosen_move = None
+
+        if safe_moves:
+            # Prefer safe moves that block an immediate human win, if any
+            safe_blocks = [(r, c, s) for (r, c, s) in safe_moves if (r, c) in critical_blocks]
+            if safe_blocks:
+                safe_blocks.sort(key=lambda x: (-x[2], x[0], x[1]))
+                chosen_move = (safe_blocks[0][0], safe_blocks[0][1])
+            else:
+                # Otherwise choose safe move with best local_score
+                safe_moves.sort(key=lambda x: (-x[2], x[0], x[1]))
+                chosen_move = (safe_moves[0][0], safe_moves[0][1])
+        else:
+            # No fully safe moves.
+            # In DEFENSIVE mode, first try to pick a move that blocks an
+            # immediate human win if possible, even if it's not fully safe.
+            if mode == 'DEFENSIVE' and critical_blocks:
+                block_candidates = [e for e in evaluated if (e[0], e[1]) in critical_blocks]
+                if block_candidates:
+                    block_candidates.sort(key=lambda x: (x[2], -x[3], x[0], x[1]))
+                    r, c, _, _ = block_candidates[0]
+                    chosen_move = (r, c)
+                else:
+                    evaluated.sort(key=lambda x: (x[2], -x[3], x[0], x[1]))
+                    r, c, _, _ = evaluated[0]
+                    chosen_move = (r, c)
+            else:
+                # BUILDING mode or no critical blocks: choose least damaging candidate
+                evaluated.sort(key=lambda x: (x[2], -x[3], x[0], x[1]))
+                r, c, _, _ = evaluated[0]
+                chosen_move = (r, c)
+
+        if chosen_move is not None:
+            r, c = chosen_move
+            if board[r][c] == 0:
+                board[r][c] = 2
+                self.move = 1
+                return
+
+        # Fallback (should rarely be hit)
+        for r in range(n):
+            for c in range(n):
+                if board[r][c] == 0:
+                    board[r][c] = 2
+                    self.move = 1
+                    return
     
     def _dcScoreCell(self, r, c, colStart, colEnd):
         """
