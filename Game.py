@@ -217,7 +217,176 @@ class Game:
         '''
         Backtracking logic
         '''
-        self.move = 1
+        # CPU is player 2 (Blue), human is player 1 (Green)
+        board = self.state
+        n = self.size
+
+        # ---------- Helper: neighbors ----------
+        def neighbors(r, c):
+            for dr, dc in [(-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0)]:
+                nr, nc = r + dr, c + dc
+                if 0 <= nr < n and 0 <= nc < n:
+                    yield nr, nc
+
+        # ---------- Helper: find groups ----------
+        def get_player_groups(player, local_board):
+            """
+            Returns list of connected components (groups) of `player` stones
+            in the given `local_board`.
+            """
+            visited = [[False] * n for _ in range(n)]
+            groups = []
+            for r in range(n):
+                for c in range(n):
+                    if local_board[r][c] == player and not visited[r][c]:
+                        stack = [(r, c)]
+                        visited[r][c] = True
+                        group = [(r, c)]
+                        while stack:
+                            cr, cc = stack.pop()
+                            for nr, nc in neighbors(cr, cc):
+                                if local_board[nr][nc] == player and not visited[nr][nc]:
+                                    visited[nr][nc] = True
+                                    stack.append((nr, nc))
+                                    group.append((nr, nc))
+                        groups.append(group)
+            return groups
+
+        # ---------- STEP 1: Detect virtual connections ----------
+        def detectVirtualConnections(local_board, player):
+            """
+            Returns a list of virtual connections for `player`.
+            Each virtual connection is represented as a list of carrier cells (r, c).
+
+            Heuristic definition used here:
+            - Compute connected groups of the player's stones.
+            - For every pair of distinct groups, look for PAIRS of empty cells
+              (e1, e2) such that:
+                * e1 is adjacent to at least one stone in group A
+                * e2 is adjacent to at least one stone in group B
+                * e1 and e2 are adjacent empty cells
+            - The union of all such e1/e2 cells are the carrier cells for that
+              virtual connection, and there must be at least 2 distinct cells.
+            """
+            groups = get_player_groups(player, local_board)
+            connections = []
+
+            empty_cells = [(r, c) for r in range(n) for c in range(n) if local_board[r][c] == 0]
+
+            for i in range(len(groups)):
+                for j in range(i + 1, len(groups)):
+                    g1 = set(groups[i])
+                    g2 = set(groups[j])
+                    carriers = set()
+                    # For each empty cell adjacent to group A, see if it can
+                    # form a 2-cell bridge with some empty adjacent to group B.
+                    for er1, ec1 in empty_cells:
+                        touches_g1 = any((nr, nc) in g1 for nr, nc in neighbors(er1, ec1))
+                        if not touches_g1:
+                            continue
+                        for er2, ec2 in neighbors(er1, ec1):
+                            if not (0 <= er2 < n and 0 <= ec2 < n):
+                                continue
+                            if local_board[er2][ec2] != 0:
+                                continue
+                            touches_g2 = any((nr, nc) in g2 for nr, nc in neighbors(er2, ec2))
+                            if touches_g2:
+                                carriers.add((er1, ec1))
+                                carriers.add((er2, ec2))
+                    if len(carriers) >= 2:
+                        connections.append(list(carriers))
+
+            return connections
+
+        # STEP 1 for human (defensive assessment) and CPU (building assessment)
+        human_connections = detectVirtualConnections(board, player=1)
+        cpu_connections = detectVirtualConnections(board, player=2)
+
+        # Also detect IMMEDIATE human winning moves (critical blocks)
+        critical_blocks = set()
+        for r in range(n):
+            for c in range(n):
+                if board[r][c] != 0:
+                    continue
+                board[r][c] = 1
+                if self.checkWin() == 1:
+                    critical_blocks.add((r, c))
+                board[r][c] = 0
+
+        # ---------- STEP 2: Choose mode ----------
+        if human_connections or critical_blocks:
+            mode = 'DEFENSIVE'
+        else:
+            mode = 'BUILDING'
+
+        # ---------- STEP 3: Generate candidate moves ----------
+        candidates = set()
+
+        if mode == 'DEFENSIVE':
+            # 1) Block immediate human winning cells first
+            for r, c in critical_blocks:
+                if board[r][c] == 0:
+                    candidates.add((r, c))
+
+            # 2) Block carrier cells that realize human virtual connections
+            for conn in human_connections:
+                for r, c in conn:
+                    if board[r][c] == 0:
+                        candidates.add((r, c))
+
+            # 3) Also consider all empty cells adjacent to any human stone
+            #    as potential blocking moves along human paths.
+            for r in range(n):
+                for c in range(n):
+                    if board[r][c] == 0:
+                        for nr, nc in neighbors(r, c):
+                            if board[nr][nc] == 1:
+                                candidates.add((r, c))
+                                break
+
+        if mode == 'BUILDING' or not candidates:
+            # 1) Carrier cells of CPU virtual connections (actively build them)
+            for conn in cpu_connections:
+                for r, c in conn:
+                    if board[r][c] == 0:
+                        candidates.add((r, c))
+
+            # 2) Empty cells adjacent to CPU stones (local building)
+            for r in range(n):
+                for c in range(n):
+                    if board[r][c] == 2:
+                        for nr, nc in neighbors(r, c):
+                            if board[nr][nc] == 0:
+                                candidates.add((nr, nc))
+
+            # If CPU has no stones yet or no adjacent empties were found,
+            # fall back to a central-ish empty cell.
+            if not candidates:
+                center_r = n // 2
+                center_c = n // 2
+                if board[center_r][center_c] == 0:
+                    candidates.add((center_r, center_c))
+                else:
+                    found = False
+                    for r in range(n):
+                        for c in range(n):
+                            if board[r][c] == 0:
+                                candidates.add((r, c))
+                                found = True
+                                break
+                        if found:
+                            break
+
+        candidates = list(candidates)
+        if not candidates:
+            # No candidates somehow; just play first empty cell.
+            for r in range(n):
+                for c in range(n):
+                    if board[r][c] == 0:
+                        board[r][c] = 2
+                        self.move = 1
+                        return
+            return
     
     def _dcScoreCell(self, r, c, colStart, colEnd):
         """
