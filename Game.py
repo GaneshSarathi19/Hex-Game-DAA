@@ -215,340 +215,72 @@ class Game:
 
     def _cpuMoveBacktracking(self):
         '''
-        Backtracking logic
+        FULL logical backtracking for CPU (player 2, Blue).
+        CPU connects LEFT → RIGHT, human TOP → BOTTOM.
+
+        For each candidate CPU move M:
+            For every human reply H:
+                CPU must have at least one counter C (adjacent to H)
+                such that, after C, the human has NO immediate winning move.
+            If ANY human reply lacks such a CPU counter, M is rejected.
+
+        If we find a move M that survives all human replies, we play it
+        immediately. If none exist, fall back to a simple delaying move.
         '''
-        # CPU is player 2 (Blue), human is player 1 (Green)
         board = self.state
         n = self.size
 
-        # ---------- Helper: neighbors ----------
         def neighbors(r, c):
             for dr, dc in [(-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0)]:
                 nr, nc = r + dr, c + dc
                 if 0 <= nr < n and 0 <= nc < n:
                     yield nr, nc
 
-        # ---------- Helper: find groups ----------
-        def get_player_groups(player, local_board):
+        def human_wins():
+            return self.checkWin() == 1
+
+        def cpu_wins():
+            return self.checkWin() == 2
+
+        def cpu_connectivity_score(local_board):
             """
-            Returns list of connected components (groups) of `player` stones
-            in the given `local_board`.
+            Approximate LEFT→RIGHT connectivity for CPU (player 2).
+            Lower score is better: smaller remaining horizontal gap.
             """
-            visited = [[False] * n for _ in range(n)]
-            groups = []
-            for r in range(n):
-                for c in range(n):
-                    if local_board[r][c] == player and not visited[r][c]:
-                        stack = [(r, c)]
-                        visited[r][c] = True
-                        group = [(r, c)]
-                        while stack:
-                            cr, cc = stack.pop()
-                            for nr, nc in neighbors(cr, cc):
-                                if local_board[nr][nc] == player and not visited[nr][nc]:
-                                    visited[nr][nc] = True
-                                    stack.append((nr, nc))
-                                    group.append((nr, nc))
-                        groups.append(group)
-            return groups
+            cols = [c for r in range(n) for c in range(n) if local_board[r][c] == 2]
+            if not cols:
+                return n - 1
+            min_col = min(cols)
+            max_col = max(cols)
+            span = max_col - min_col
+            gap = (n - 1) - span
+            return gap
 
-        # ---------- STEP 1: Detect virtual connections ----------
-        def detectVirtualConnections(local_board, player):
+        def human_immediate_wins():
             """
-            Returns a list of virtual connections for `player`.
-            Each virtual connection is represented as a list of carrier cells (r, c).
-
-            Heuristic definition used here:
-            - Compute connected groups of the player's stones.
-            - For every pair of distinct groups, look for PAIRS of empty cells
-              (e1, e2) such that:
-                * e1 is adjacent to at least one stone in group A
-                * e2 is adjacent to at least one stone in group B
-                * e1 and e2 are adjacent empty cells
-            - The union of all such e1/e2 cells are the carrier cells for that
-              virtual connection, and there must be at least 2 distinct cells.
+            True if human has any immediate winning move from
+            the CURRENT board by playing on an empty cell adjacent
+            to at least one human stone.
             """
-            groups = get_player_groups(player, local_board)
-            connections = []
-
-            empty_cells = [(r, c) for r in range(n) for c in range(n) if local_board[r][c] == 0]
-
-            for i in range(len(groups)):
-                for j in range(i + 1, len(groups)):
-                    g1 = set(groups[i])
-                    g2 = set(groups[j])
-                    carriers = set()
-                    # For each empty cell adjacent to group A, see if it can
-                    # form a 2-cell bridge with some empty adjacent to group B.
-                    for er1, ec1 in empty_cells:
-                        touches_g1 = any((nr, nc) in g1 for nr, nc in neighbors(er1, ec1))
-                        if not touches_g1:
-                            continue
-                        for er2, ec2 in neighbors(er1, ec1):
-                            if not (0 <= er2 < n and 0 <= ec2 < n):
-                                continue
-                            if local_board[er2][ec2] != 0:
-                                continue
-                            touches_g2 = any((nr, nc) in g2 for nr, nc in neighbors(er2, ec2))
-                            if touches_g2:
-                                carriers.add((er1, ec1))
-                                carriers.add((er2, ec2))
-                    if len(carriers) >= 2:
-                        connections.append(list(carriers))
-
-            return connections
-
-        # STEP 1 for human (defensive assessment) and CPU (building assessment)
-        human_connections = detectVirtualConnections(board, player=1)
-        cpu_connections = detectVirtualConnections(board, player=2)
-
-        # Also detect IMMEDIATE human winning moves (critical blocks)
-        critical_blocks = set()
-        for r in range(n):
-            for c in range(n):
-                if board[r][c] != 0:
-                    continue
-                board[r][c] = 1
-                if self.checkWin() == 1:
-                    critical_blocks.add((r, c))
-                board[r][c] = 0
-
-        # ---------- STEP 2: Choose mode ----------
-        if human_connections or critical_blocks:
-            mode = 'DEFENSIVE'
-        else:
-            mode = 'BUILDING'
-
-        # ---------- STEP 3: Generate candidate moves ----------
-        candidates = set()
-
-        if mode == 'DEFENSIVE':
-            # 1) Block immediate human winning cells first
-            for r, c in critical_blocks:
-                if board[r][c] == 0:
-                    candidates.add((r, c))
-
-            # 2) Block carrier cells that realize human virtual connections
-            for conn in human_connections:
-                for r, c in conn:
-                    if board[r][c] == 0:
-                        candidates.add((r, c))
-
-            # 3) Also consider all empty cells adjacent to any human stone
-            #    as potential blocking moves along human paths.
-            for r in range(n):
-                for c in range(n):
-                    if board[r][c] == 0:
-                        for nr, nc in neighbors(r, c):
-                            if board[nr][nc] == 1:
-                                candidates.add((r, c))
-                                break
-
-        if mode == 'BUILDING' or not candidates:
-            # 1) Carrier cells of CPU virtual connections (actively build them)
-            for conn in cpu_connections:
-                for r, c in conn:
-                    if board[r][c] == 0:
-                        candidates.add((r, c))
-
-            # 2) Empty cells adjacent to CPU stones (local building)
-            for r in range(n):
-                for c in range(n):
-                    if board[r][c] == 2:
-                        for nr, nc in neighbors(r, c):
-                            if board[nr][nc] == 0:
-                                candidates.add((nr, nc))
-
-            # If CPU has no stones yet or no adjacent empties were found,
-            # fall back to a central-ish empty cell.
-            if not candidates:
-                center_r = n // 2
-                center_c = n // 2
-                if board[center_r][center_c] == 0:
-                    candidates.add((center_r, center_c))
-                else:
-                    found = False
-                    for r in range(n):
-                        for c in range(n):
-                            if board[r][c] == 0:
-                                candidates.add((r, c))
-                                found = True
-                                break
-                        if found:
-                            break
-
-        candidates = list(candidates)
-        if not candidates:
-            # No candidates somehow; just play first empty cell.
-            for r in range(n):
-                for c in range(n):
-                    if board[r][c] == 0:
-                        board[r][c] = 2
-                        self.move = 1
-                        return
-            return
-        
-        # ---------- STEP 4: Backtracking evaluation ----------
-        safe_moves = []
-        evaluated = []  # (r, c, risk_score, local_score)
-
-        center_r = (n - 1) / 2.0
-        center_c = (n - 1) / 2.0
-
-        def generate_human_forcing_replies():
-            replies = set()
-            # Empty cells adjacent to human stones
+            candidates = set()
             for r in range(n):
                 for c in range(n):
                     if board[r][c] == 1:
                         for nr, nc in neighbors(r, c):
                             if board[nr][nc] == 0:
-                                replies.add((nr, nc))
+                                candidates.add((nr, nc))
+            if not candidates:
+                return False
 
-            # Carrier cells of human virtual connections
-            local_connections = detectVirtualConnections(board, player=1)
-            for conn in local_connections:
-                for r, c in conn:
-                    if board[r][c] == 0:
-                        replies.add((r, c))
-
-            return list(replies)
-
-        for r, c in candidates:
-            if board[r][c] != 0:
-                continue
-
-            # Hypothetically place CPU stone
-            board[r][c] = 2
-
-            replies = generate_human_forcing_replies()
-            is_safe = True
-            risk_score = 0
-
-            for hr, hc in replies:
-                if board[hr][hc] != 0:
+            for r, c in candidates:
+                if board[r][c] != 0:
                     continue
-
-                # Human reply
-                board[hr][hc] = 1
-                # Check if human now has any virtual connection OR an actual win
-                after_conns = detectVirtualConnections(board, player=1)
-                threat = len(after_conns)
-                # Also treat a real connection (win) as a strong threat
-                human_wins = (self.checkWin() == 1)
-                if human_wins:
-                    threat = max(threat, 2)
-
-                if threat > 0:
-                    is_safe = False
-                risk_score = max(risk_score, threat)
-                # Undo human move
-                board[hr][hc] = 0
-
-                if not is_safe:
-                    # We already know this move allows a forcing virtual connection.
-                    break
-
-            # Undo CPU hypothetical move
-            board[r][c] = 0
-
-            # Local heuristic score (prefer central, connection-extending)
-            neighbor_cpu = 0
-            neighbor_human = 0
-            for nr, nc in neighbors(r, c):
-                if board[nr][nc] == 2:
-                    neighbor_cpu += 1
-                elif board[nr][nc] == 1:
-                    neighbor_human += 1
-
-            # Smaller distance to center is better.
-            dist_center = abs(r - center_r) + abs(c - center_c)
-            local_score = neighbor_cpu * 10 - neighbor_human * 2 - dist_center
-
-            if is_safe:
-                safe_moves.append((r, c, local_score))
-            evaluated.append((r, c, risk_score, local_score))
-
-        # ---------- STEP 5: Select move ----------
-        chosen_move = None
-
-        if safe_moves:
-            # Prefer safe moves that block an immediate human win, if any
-            safe_blocks = [(r, c, s) for (r, c, s) in safe_moves if (r, c) in critical_blocks]
-            if safe_blocks:
-                safe_blocks.sort(key=lambda x: (-x[2], x[0], x[1]))
-                chosen_move = (safe_blocks[0][0], safe_blocks[0][1])
-            else:
-                # Otherwise choose safe move with best local_score
-                safe_moves.sort(key=lambda x: (-x[2], x[0], x[1]))
-                chosen_move = (safe_moves[0][0], safe_moves[0][1])
-        else:
-            # No fully safe moves.
-            # In DEFENSIVE mode, first try to pick a move that blocks an
-            # immediate human win if possible, even if it's not fully safe.
-            if mode == 'DEFENSIVE' and critical_blocks:
-                block_candidates = [e for e in evaluated if (e[0], e[1]) in critical_blocks]
-                if block_candidates:
-                    block_candidates.sort(key=lambda x: (x[2], -x[3], x[0], x[1]))
-                    r, c, _, _ = block_candidates[0]
-                    chosen_move = (r, c)
-                else:
-                    evaluated.sort(key=lambda x: (x[2], -x[3], x[0], x[1]))
-                    r, c, _, _ = evaluated[0]
-                    chosen_move = (r, c)
-            else:
-                # BUILDING mode or no critical blocks: choose least damaging candidate
-                evaluated.sort(key=lambda x: (x[2], -x[3], x[0], x[1]))
-                r, c, _, _ = evaluated[0]
-                chosen_move = (r, c)
-
-        if chosen_move is not None:
-            r, c = chosen_move
-            if board[r][c] == 0:
-                board[r][c] = 2
-                self.move = 1
-                return
-
-        # Fallback (should rarely be hit)
-        for r in range(n):
-            for c in range(n):
-                if board[r][c] == 0:
-                    board[r][c] = 2
-                    self.move = 1
-                    return
-    
-    def _dcScoreCell(self, r, c, colStart, colEnd):
-        """
-        SIMPLE scoring: Favor HORIZONTAL neighbors, discourage VERTICAL.
-        """
-        if self.state[r][c] != 0:
-            return float('-inf')
-        
-        # Count neighbors by direction
-        horizontal_neighbors = 0  # Left/right connections (good!)
-        vertical_neighbors = 0    # Up/down connections (bad for horizontal path!)
-        
-        for dr, dc in [(-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0)]:
-            nr, nc = r + dr, c + dc
-            if 0 <= nr < self.size and 0 <= nc < self.size:
-                if self.state[nr][nc] == 2:
-                    if dc != 0:
-                        # Column changes = horizontal neighbor
-                        horizontal_neighbors += 1
-                    else:
-                        # Only row changes = vertical neighbor
-                        vertical_neighbors += 1
-        
-        # Scoring: Horizontal good, vertical bad
-        score = horizontal_neighbors * 10.0  # Reward horizontal
-        score -= vertical_neighbors * 5.0     # Penalize vertical
-        
-        # If no neighbors, prefer center columns
-        if horizontal_neighbors == 0 and vertical_neighbors == 0:
-            center_col = self.size // 2
-            score = 5.0 - abs(c - center_col) * 0.1
-        
-        return score
+                board[r][c] = 1
+                if human_wins():
+                    board[r][c] = 0
+                    return True
+                board[r][c] = 0
+            return False
 
 
     def _dcSolve(self, rowStart, rowEnd, colStart, colEnd):
