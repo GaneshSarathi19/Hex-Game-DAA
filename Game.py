@@ -281,6 +281,93 @@ class Game:
                     return True
                 board[r][c] = 0
             return False
+        def get_player_groups(player):
+            """Return list of connected components (groups) for given player."""
+            visited = [[False] * n for _ in range(n)]
+            groups = []
+            for r in range(n):
+                for c in range(n):
+                    if board[r][c] == player and not visited[r][c]:
+                        stack = [(r, c)]
+                        visited[r][c] = True
+                        group = [(r, c)]
+                        while stack:
+                            cr, cc = stack.pop()
+                            for nr, nc in neighbors(cr, cc):
+                                if board[nr][nc] == player and not visited[nr][nc]:
+                                    visited[nr][nc] = True
+                                    stack.append((nr, nc))
+                                    group.append((nr, nc))
+                        groups.append(group)
+            return groups
+
+        def detectVirtualConnections(player):
+            """
+            Lightweight virtual connection detector.
+
+            For the given player:
+            - Find connected groups of stones.
+            - For each pair of groups, and for human also group+goal-edge,
+              find empty carrier cells that are adjacent to both structures.
+            - A virtual connection exists for that pair if there are >= 2
+              distinct carrier cells.
+
+            Returns: list of lists of carrier cells [(r, c), ...].
+            """
+            groups = get_player_groups(player)
+            if len(groups) < 1:
+                return []
+
+            empties = [(r, c) for r in range(n) for c in range(n) if board[r][c] == 0]
+            connections = []
+
+            # Group–group virtual connections
+            for i in range(len(groups)):
+                g1 = set(groups[i])
+                for j in range(i + 1, len(groups)):
+                    g2 = set(groups[j])
+                    carriers = []
+                    for er, ec in empties:
+                        touches_g1 = False
+                        touches_g2 = False
+                        for nr, nc in neighbors(er, ec):
+                            if (nr, nc) in g1:
+                                touches_g1 = True
+                            if (nr, nc) in g2:
+                                touches_g2 = True
+                            if touches_g1 and touches_g2:
+                                carriers.append((er, ec))
+                                break
+                    if len(carriers) >= 2:
+                        connections.append(carriers)
+
+            # For human (player 1), also consider group + goal edge (TOP/BOTTOM)
+            if player == 1:
+                for g in groups:
+                    gset = set(g)
+
+                    # Top edge: empties in row 0 adjacent to group
+                    top_carriers = []
+                    for er, ec in empties:
+                        if er != 0:
+                            continue
+                        if any((nr, nc) in gset for nr, nc in neighbors(er, ec)):
+                            top_carriers.append((er, ec))
+                    if len(top_carriers) >= 2:
+                        connections.append(top_carriers)
+
+                    # Bottom edge: empties in last row adjacent to group
+                    bottom_carriers = []
+                    for er, ec in empties:
+                        if er != n - 1:
+                            continue
+                        if any((nr, nc) in gset for nr, nc in neighbors(er, ec)):
+                            bottom_carriers.append((er, ec))
+                    if len(bottom_carriers) >= 2:
+                        connections.append(bottom_carriers)
+
+            return connections
+
 
 
     def _dcSolve(self, rowStart, rowEnd, colStart, colEnd):
