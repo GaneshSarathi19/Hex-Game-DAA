@@ -456,6 +456,101 @@ class Game:
             if cpu_wins():
                 self.move = 1
                 return
+            # Human replies: empty cells adjacent to any human stone
+            human_replies = set()
+            for r in range(n):
+                for c in range(n):
+                    if board[r][c] == 1:
+                        for nr, nc in neighbors(r, c):
+                            if board[nr][nc] == 0:
+                                human_replies.add((nr, nc))
+
+            move_safe = True
+            for hr, hc in human_replies:
+                if board[hr][hc] != 0:
+                    continue
+
+                # Human plays H
+                board[hr][hc] = 1
+
+                # If this H already wins, M is unsafe
+                if human_wins():
+                    move_safe = False
+                    board[hr][hc] = 0
+                    break
+
+                # --- Virtual-connection pruning ---
+                # After H, see if human has any virtual connection that
+                # CPU cannot break by playing on *any* of its carrier cells
+                # without immediately losing or worsening its own connectivity.
+                human_vcs = detectVirtualConnections(player=1)
+                if human_vcs:
+                    base_conn_after_H = cpu_connectivity_score(board)
+                    forcing = False
+                    for carriers in human_vcs:
+                        has_block = False
+                        for cr, cc in carriers:
+                            if board[cr][cc] != 0:
+                                continue
+                            board[cr][cc] = 2
+                            # CPU block is acceptable only if:
+                            # - Human has no immediate winning reply after this block
+                            # - CPU's LEFT→RIGHT connectivity does not get worse
+                            if (not human_immediate_wins()) and (
+                                cpu_connectivity_score(board) <= base_conn_after_H
+                            ):
+                                has_block = True
+                                board[cr][cc] = 0
+                                break
+                            board[cr][cc] = 0
+                        if not has_block:
+                            forcing = True
+                            break
+
+                    if forcing:
+                        move_safe = False
+                        board[hr][hc] = 0
+                        break
+
+                # Otherwise CPU must have at least one valid counter adjacent to H
+                if not cpu_has_response_after(hr, hc):
+                    move_safe = False
+                    board[hr][hc] = 0
+                    break
+
+                board[hr][hc] = 0
+
+            # Undo M
+            board[mr][mc] = 0
+
+            if move_safe:
+                improvement = max(0, base_conn_before - conn_after_M)
+                # Keep the safe move that best improves CPU connectivity
+                if improvement > best_safe_improvement:
+                    best_safe_improvement = improvement
+                    best_safe_move = (mr, mc)
+
+        # STEP 3: Play chosen move
+        if best_safe_move is not None:
+            mr, mc = best_safe_move
+            if board[mr][mc] == 0:
+                board[mr][mc] = 2
+                self.move = 1
+                return
+
+        # No fully safe move respecting connectivity – choose a delaying move
+        center_r, center_c = n // 2, n // 2
+        if board[center_r][center_c] == 0:
+            board[center_r][center_c] = 2
+            self.move = 1
+            return
+
+        for mr, mc in candidates:
+            if board[mr][mc] == 0:
+                board[mr][mc] = 2
+                self.move = 1
+                return
+
 
 
 
