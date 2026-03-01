@@ -367,6 +367,95 @@ class Game:
                         connections.append(bottom_carriers)
 
             return connections
+            
+        def cpu_has_response_after(h_r, h_c):
+            """
+            Given human has just played at (h_r, h_c),
+            check whether CPU has ANY counter move C adjacent to H
+            such that, after C, the human has NO immediate winning move.
+            """
+            responses = []
+            for nr, nc in neighbors(h_r, h_c):
+                if board[nr][nc] == 0:
+                    responses.append((nr, nc))
+
+            if not responses:
+                return False
+
+            # Connectivity baseline after H is already on board
+            base_conn = cpu_connectivity_score(board)
+
+            for cr, cc in responses:
+                if board[cr][cc] != 0:
+                    continue
+                board[cr][cc] = 2
+
+                # Reject counters that worsen CPU LEFT→RIGHT connectivity
+                if cpu_connectivity_score(board) > base_conn:
+                    board[cr][cc] = 0
+                    continue
+
+                # Accept if after C the human has no immediate winning move
+                if not human_immediate_wins():
+                    board[cr][cc] = 0
+                    return True
+
+                board[cr][cc] = 0
+
+            return False
+
+        # STEP 1: Generate CPU candidate moves
+        candidates = set()
+        for r in range(n):
+            for c in range(n):
+                if board[r][c] == 2:
+                    for nr, nc in neighbors(r, c):
+                        if board[nr][nc] == 0:
+                            candidates.add((nr, nc))
+
+        if not candidates:
+            # No neighbors: try center
+            center_r, center_c = n // 2, n // 2
+            if board[center_r][center_c] == 0:
+                candidates.add((center_r, center_c))
+            else:
+                for r in range(n):
+                    for c in range(n):
+                        if board[r][c] == 0:
+                            candidates.add((r, c))
+                            break
+                    if candidates:
+                        break
+
+        if not candidates:
+            return
+
+        candidates = list(candidates)
+
+        # Baseline CPU LEFT→RIGHT connectivity before any move
+        base_conn_before = cpu_connectivity_score(board)
+
+        # STEP 2: Try each candidate M with full logical backtracking
+        best_safe_move = None
+        best_safe_improvement = -1  # higher is better
+
+        for mr, mc in candidates:
+            if board[mr][mc] != 0:
+                continue
+
+            # CPU plays M
+            board[mr][mc] = 2
+
+            # Enforce connectivity invariant: do not worsen LEFT→RIGHT potential
+            conn_after_M = cpu_connectivity_score(board)
+            if conn_after_M > base_conn_before:
+                board[mr][mc] = 0
+                continue
+
+            # Immediate CPU win
+            if cpu_wins():
+                self.move = 1
+                return
 
 
 
