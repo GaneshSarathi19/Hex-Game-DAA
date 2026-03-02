@@ -1,0 +1,98 @@
+[
+  {
+    "strategy": "Greedy",
+    "avg_execution_time": 0.035769,
+    "session_timestamp": "2026-03-02 18:19:45",
+    "moves_count": 21
+  },
+  {
+    "strategy": "Greedy",
+    "avg_execution_time": 0.03397,
+    "session_timestamp": "2026-03-02 18:20:09",
+    "moves_count": 26
+  },
+  {
+    "strategy": "Greedy",
+    "avg_execution_time": 0.035961,
+    "session_timestamp": "2026-03-02 18:20:29",
+    "moves_count": 20
+  },
+  {
+    "strategy": "Greedy",
+    "avg_execution_time": 0.033673,
+    "session_timestamp": "2026-03-02 18:20:44",
+    "moves_count": 20
+  },
+  {
+    "strategy": "Greedy",
+    "avg_execution_time": 0.041671,
+    "session_timestamp": "2026-03-02 18:21:01",
+    "moves_count": 15
+  },
+  {
+    "strategy": "D&C",
+    "avg_execution_time": 0.000281,
+    "session_timestamp": "2026-03-02 18:34:33",
+    "moves_count": 27
+  },
+  {
+    "strategy": "Greedy",
+    "avg_execution_time": 0.037473,
+    "session_timestamp": "2026-03-02 18:34:47",
+    "moves_count": 16
+  },
+  {
+    "strategy": "D&C",
+    "avg_execution_time": 0.000258,
+    "session_timestamp": "2026-03-02 18:35:16",
+    "moves_count": 32
+  },
+  {
+    "strategy": "D&C",
+    "avg_execution_time": 0.000278,
+    "session_timestamp": "2026-03-02 18:35:29",
+    "moves_count": 15
+  },
+  {
+    "strategy": "DP",
+    "avg_execution_time": 0.000812,
+    "session_timestamp": "2026-03-02 18:35:52",
+    "moves_count": 26
+  },
+  {
+    "strategy": "DP",
+    "avg_execution_time": 0.000803,
+    "session_timestamp": "2026-03-02 18:36:10",
+    "moves_count": 23
+  },
+  {
+    "strategy": "DP",
+    "avg_execution_time": 0.000948,
+    "session_timestamp": "2026-03-02 18:36:25",
+    "moves_count": 16
+  },
+  {
+    "strategy": "Backtracking",
+    "avg_execution_time": 0.365414,
+    "session_timestamp": "2026-03-02 18:36:40",
+    "moves_count": 11
+  },
+  {
+    "strategy": "Backtracking",
+    "avg_execution_time": 0.117865,
+    "session_timestamp": "2026-03-02 18:36:58",
+    "moves_count": 14
+  },
+  {
+    "strategy": "Backtracking",
+    "avg_execution_time": 0.11254,
+    "session_timestamp": "2026-03-02 18:37:11",
+    "moves_count": 11
+  },
+  {
+    "strategy": "Backtracking",
+    "avg_execution_time": 0.209515,
+    "session_timestamp": "2026-03-02 18:37:28",
+    "moves_count": 11
+  }
+]

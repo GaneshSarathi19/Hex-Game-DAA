@@ -1,10 +1,42 @@
 import pygame as pg
 import sys
+import json
 from os import path
 from math import sqrt
+from time import perf_counter
+from datetime import datetime
 from consts import *
 from funcs import *
 from Button import *
+from complexity_stats_ui import show_complexity_stats_window
+
+LOG_FILE = 'cpu_performance_log.json'
+
+def _append_performance_log(strategy, avg_execution_time, moves_count):
+    """Append a per-session performance log entry. Create file if missing, append only."""
+    try:
+        if path.exists(LOG_FILE):
+            with open(LOG_FILE, 'r') as f:
+                data = json.load(f)
+        else:
+            data = []
+        if not isinstance(data, list):
+            data = []
+    except (json.JSONDecodeError, IOError):
+        data = []
+    entry = {
+        "strategy": strategy,
+        "avg_execution_time": round(avg_execution_time, 6),
+        "session_timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "moves_count": moves_count,
+    }
+    data.append(entry)
+    try:
+        with open(LOG_FILE, 'w') as f:
+            json.dump(data, f, indent=2)
+    except IOError:
+        # Logging must never break the game.
+        pass
 
 class Game:
     def __init__(self, size):
@@ -19,6 +51,13 @@ class Game:
         self.started = False
         self.bg_color = BLACK
         self.ai_mode = 'Greedy'  # Default AI mode: 'Greedy', 'D&C', or 'DP'
+        # Per-session CPU timing (seconds) by strategy
+        self.session_times = {
+            'Greedy': [],
+            'D&C': [],
+            'DP': [],
+            'Backtracking': []
+        }
 
     def loadData(self):
         '''load all the data (images, files, etc)'''
@@ -130,6 +169,8 @@ class Game:
         '''
         CPU (Player 2, Blue) makes a move using the selected AI strategy.
         '''
+        strategy = self.ai_mode if self.ai_mode in ('Greedy', 'D&C', 'DP', 'Backtracking') else 'Greedy'
+        start = perf_counter()
         if self.ai_mode == 'Greedy':
             self._cpuMoveGreedy()
         elif self.ai_mode == 'D&C':
@@ -140,6 +181,13 @@ class Game:
             self._cpuMoveBacktracking()
         else:  # Default fallback to Greedy
             self._cpuMoveGreedy()
+        end = perf_counter()
+        # Record per-move time in current session; actual log entry is per session at game over.
+        try:
+            self.session_times.setdefault(strategy, []).append(end - start)
+        except AttributeError:
+            self.session_times = {s: [] for s in ('Greedy', 'D&C', 'DP', 'Backtracking')}
+            self.session_times[strategy].append(end - start)
     
     def _cpuMoveGreedy(self):
         '''
@@ -367,6 +415,39 @@ class Game:
                         connections.append(bottom_carriers)
 
             return connections
+
+        # --- DEFENSIVE PRE-CHECK: if human is close to winning, prioritize blocking ---
+        try:
+            human_dist, cpu_dist = self.estimateWinningDistance()
+        except Exception:
+            human_dist = None
+        # If Dijkstra says human is very close (e.g., <= 2 moves), try a pure blocking move first.
+        if human_dist is not None and human_dist != float('inf') and human_dist <= 2:
+            best_block = None
+            best_increase = float('-inf')
+            # Consider all empty cells as potential blocks
+            for r in range(n):
+                for c in range(n):
+                    if board[r][c] != 0:
+                        continue
+                    # Temporarily place CPU stone
+                    board[r][c] = 2
+                    try:
+                        human_after, _ = self.estimateWinningDistance()
+                    except Exception:
+                        human_after = human_dist
+                    # We want to maximize human's distance to winning
+                    increase = (human_after if human_after is not None else human_dist) - human_dist
+                    board[r][c] = 0
+                    if increase > best_increase:
+                        best_increase = increase
+                        best_block = (r, c)
+            if best_block is not None:
+                br, bc = best_block
+                if board[br][bc] == 0:
+                    board[br][bc] = 2
+                    self.move = 1
+                    return
             
         def cpu_has_response_after(h_r, h_c):
             """
@@ -552,6 +633,99 @@ class Game:
                 return
 
 
+
+
+    def _dcScoreCell(self, r, c, colStart, colEnd):
+        """
+        SIMPLE scoring: Favor HORIZONTAL neighbors, discourage VERTICAL.
+        """
+        if self.state[r][c] != 0:
+            return float('-inf')
+        
+        # Count neighbors by direction
+        horizontal_neighbors = 0  # Left/right connections (good!)
+        vertical_neighbors = 0    # Up/down connections (bad for horizontal path!)
+        
+        for dr, dc in [(-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0)]:
+            nr, nc = r + dr, c + dc
+            if 0 <= nr < self.size and 0 <= nc < self.size:
+                if self.state[nr][nc] == 2:
+                    if dc != 0:
+                        # Column changes = horizontal neighbor
+                        horizontal_neighbors += 1
+                    else:
+                        # Only row changes = vertical neighbor
+                        vertical_neighbors += 1
+        
+        # Scoring: Horizontal good, vertical bad
+        score = horizontal_neighbors * 10.0  # Reward horizontal
+        score -= vertical_neighbors * 5.0     # Penalize vertical
+        
+        # If no neighbors, prefer center columns
+        if horizontal_neighbors == 0 and vertical_neighbors == 0:
+            center_col = self.size // 2
+            score = 5.0 - abs(c - center_col) * 0.1
+        
+        return score
+
+
+    def _dcSolve(self, rowStart, rowEnd, colStart, colEnd):
+        """
+        Simple D&C - unchanged.
+        """
+        height = rowEnd - rowStart + 1
+        width = colEnd - colStart + 1
+        
+        # BASE CASE
+        if width <= 4 or height <= 4:
+            best_r, best_c, best_score = None, None, float('-inf')
+            for r in range(rowStart, rowEnd + 1):
+                for c in range(colStart, colEnd + 1):
+                    if self.state[r][c] == 0:
+                        score = self._dcScoreCell(r, c, colStart, colEnd)
+                        if score > best_score:
+                            best_score = score
+                            best_r, best_c = r, c
+            return (best_r, best_c, best_score)
+        
+        # DIVIDE
+        mid_col = colStart + width // 2
+        
+        if mid_col <= colStart or mid_col > colEnd:
+            best_r, best_c, best_score = None, None, float('-inf')
+            for r in range(rowStart, rowEnd + 1):
+                for c in range(colStart, colEnd + 1):
+                    if self.state[r][c] == 0:
+                        score = self._dcScoreCell(r, c, colStart, colEnd)
+                        if score > best_score:
+                            best_score = score
+                            best_r, best_c = r, c
+            return (best_r, best_c, best_score)
+        
+        # CONQUER
+        left_result = self._dcSolve(rowStart, rowEnd, colStart, mid_col - 1)
+        right_result = self._dcSolve(rowStart, rowEnd, mid_col, colEnd)
+        
+        r_left, c_left, score_left = left_result
+        r_right, c_right, score_right = right_result
+        
+        # COMBINE
+        has_left = any(self.state[r][c] == 2 
+                    for r in range(self.size) 
+                    for c in range(colStart, min(mid_col, self.size)))
+        
+        has_right = any(self.state[r][c] == 2 
+                        for r in range(self.size) 
+                        for c in range(max(mid_col, 0), min(colEnd + 1, self.size)))
+        
+        if not has_left and not has_right:
+            return right_result if score_right > score_left else left_result
+        elif has_left and not has_right:
+            return right_result if r_right is not None else left_result
+        elif has_right and not has_left:
+            return left_result if r_left is not None else right_result
+        else:
+            return right_result if score_right > score_left else left_result
 
 
     def _dcSolve(self, rowStart, rowEnd, colStart, colEnd):
@@ -816,10 +990,12 @@ class Game:
         mode_buttons = [greedy_btn, dnc_btn, dp_btn, backtracking_btn]
 
         play_y = 400
-        rules_y = 480
+        rules_y = 460
+        time_complexity_y = 520
         play = Button((grid_center_x, play_y), 52, 'Start Game', col=GREEN)
         rules = Button((grid_center_x, rules_y), 44, 'Rules', col=WHITE)
-        buttons = [play, rules] + mode_buttons
+        time_complexity_btn = Button((grid_center_x, time_complexity_y), 40, 'Time Complexity', col=LIGHTBLUE)
+        buttons = [play, rules, time_complexity_btn] + mode_buttons
 
         while start:
             self.clock.tick(FPS)
@@ -842,6 +1018,8 @@ class Game:
                         return True
                     if rules.triggered():
                         start = self.rulesScreen()
+                    if time_complexity_btn.triggered():
+                        show_complexity_stats_window()
 
             for button in buttons:
                 button.highlighted()
@@ -939,6 +1117,18 @@ class Game:
 
     def GOScreen(self, winner):
         '''shows game over screen, returns True if any key is hit'''
+        # At game over, persist per-session timing stats for the active strategy.
+        try:
+            strategy = self.ai_mode if self.ai_mode in ('Greedy', 'D&C', 'DP', 'Backtracking') else 'Unknown'
+            times = getattr(self, 'session_times', {}).get(strategy, [])
+            if times:
+                moves_count = len(times)
+                avg_time = sum(times) / moves_count
+                _append_performance_log(strategy, avg_time, moves_count)
+        except Exception:
+            # Never allow logging issues to break the game-over screen.
+            pass
+
         go = True
         home = Button((W/2, 2*H/3), 50, 'Home', col=WHITE)
         while go:
