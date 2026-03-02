@@ -1,0 +1,34 @@
+[33m504a099[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m time-complexity stats display ui
+[33m58cf004[m time-complexity stats display ui
+[33m184d1c6[m Added complexity stats UI file
+[33m1792702[m added time complexity dashboard
+[33m05c652e[m CPU time-taken logging + bug fixes
+[33m6e1ea63[m Backtracking level 2 (virtual pruning)
+[33me17c305[m backtracking level-1 self-pruning
+[33m84b0690[m Virtual connection detection
+[33m35a1bb0[m Cpu scoring logic and human threat detection
+[33m0072a4f[m backtracking evaluation logic
+[33m650c7a1[m Add virtual connect detection and generate candidate moves
+[33m01110ed[m Merge branch 'main' of https://github.com/GaneshSarathi19/Hex-Game-DAA
+[33m942bfc5[m ui changes - backtracking
+[33m570ee50[m final dp implementation
+[33m789a131[m implemented dp tble 1
+[33m6a381b5[m D&C Completed
+[33me4f97cc[m Final D&C implementation
+[33ma1d8f9b[m Final D&C implementation
+[33m2c8d286[m final scoring logic for D&C
+[33mc6322b0[m final scoring for D&C logic
+[33m76e9944[m Modified D&C strategy
+[33me9bbd2a[m[33m ([m[1;31morigin/ganesh-edits[m[33m)[m Merge branch 'main' into ganesh-edits
+[33md16789c[m implemented basic D&C logic
+[33m3b44867[m UI changes and strategy menu added
+[33m8eb6de7[m Merge branch 'main' of https://github.com/GaneshSarathi19/Hex-Game-DAA
+[33mca450a7[m Initial commit of Hex Game DAA
+[33m0781750[m renamed the file name
+[33mf01c164[m Added constants page
+[33me772c03[m added main executing page
+[33m788e4f9[m added distance logic for hex
+[33m5c3633c[m added greedy logic to check win
+[33ma9e6495[m Added Hex-Game-DAA project files
+[33m1418693[m Added Game.py
+[33m64c3c0a[m[33m ([m[1;31morigin/daya-game[m[33m, [m[1;31morigin/anuja-edits[m[33m)[m basic gui setup

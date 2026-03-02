@@ -141,3 +141,114 @@ def show_complexity_stats_ui(screen):
         textOut(screen, 'Open Graph', 24, BLACK, graph_rect.center)
 
         pg.display.flip()
+
+
+def show_complexity_stats_window():
+    """
+    Open a separate pygame window (900x600) to display complexity stats.
+    Does NOT modify the main game window permanently.
+    """
+    # Preserve current display to restore later
+    old_surface = pg.display.get_surface()
+    old_size = None
+    if old_surface is not None:
+        old_size = old_surface.get_size()
+
+    width, height = 900, 600
+    screen = pg.display.set_mode((width, height))
+    pg.display.set_caption('CPU Strategy Complexity Stats')
+
+    clock = pg.time.Clock()
+    running = True
+
+    # Fonts
+    title_font = pg.font.SysFont(None, 32)
+    header_font = pg.font.SysFont(None, 30)
+    row_font = pg.font.SysFont(None, 28)
+    button_font = pg.font.SysFont(None, 28)
+
+    # Button rect for "Show Graph"
+    show_graph_rect = pg.Rect(width // 2 - 100, height - 70, 200, 45)
+
+    while running:
+        clock.tick(30)
+
+        for event in pg.event.get():
+            if event.type == pg.QUIT:
+                running = False
+            elif event.type == pg.KEYDOWN and event.key == pg.K_ESCAPE:
+                running = False
+            elif event.type == pg.MOUSEBUTTONDOWN:
+                mx, my = pg.mouse.get_pos()
+                if show_graph_rect.collidepoint(mx, my):
+                    show_time_complexity_dashboard()
+
+        stats = _load_stats()
+
+        screen.fill(BLACK)
+
+        # Title
+        title_surf = title_font.render('CPU Strategy Complexity Stats', True, ORANGE)
+        title_rect = title_surf.get_rect(center=(width // 2, 60))
+        screen.blit(title_surf, title_rect)
+
+        # Column headers
+        header_y = 130
+        col_x = [
+            width * 0.15,  # Strategy
+            width * 0.35,  # Last Avg
+            width * 0.55,  # Best Avg
+            width * 0.75,  # Worst Avg
+            width * 0.90,  # Sessions
+        ]
+        headers = ['Strategy', 'Last Avg (s)', 'Best Avg (s)', 'Worst Avg (s)', 'Sessions']
+        for x, text in zip(col_x, headers):
+            surf = header_font.render(text, True, LIGHTYELLOW)
+            rect = surf.get_rect(center=(int(x), header_y))
+            screen.blit(surf, rect)
+
+        # Draw rows
+        row_y_start = header_y + 50
+        row_h = 50
+        strategies = [
+            ('Greedy', GREEN),
+            ('D&C', BLUE),
+            ('DP', YELLOW),
+            ('Backtracking', ORANGE),
+        ]
+
+        def fmt(val):
+            return f'{val:.6f}' if isinstance(val, (int, float)) else 'N/A'
+
+        for idx, (strategy, color) in enumerate(strategies):
+            st = stats.get(strategy, {})
+            y = row_y_start + idx * row_h
+            last = st.get('last')
+            best = st.get('best')
+            worst = st.get('worst')
+            count = st.get('count', 0)
+
+            row_values = [
+                strategy,
+                fmt(last),
+                fmt(best),
+                fmt(worst),
+                str(count),
+            ]
+            for x, text in zip(col_x, row_values):
+                surf = row_font.render(text, True, color if text == strategy else WHITE)
+                rect = surf.get_rect(center=(int(x), y))
+                screen.blit(surf, rect)
+
+        # "Show Graph" button
+        pg.draw.rect(screen, ORANGE, show_graph_rect, border_radius=6)
+        btn_surf = button_font.render('Show Graph', True, BLACK)
+        btn_rect = btn_surf.get_rect(center=show_graph_rect.center)
+        screen.blit(btn_surf, btn_rect)
+
+        pg.display.flip()
+
+    # Restore previous display mode when stats window closes
+    if old_size is not None:
+        pg.display.set_mode(old_size)
+
