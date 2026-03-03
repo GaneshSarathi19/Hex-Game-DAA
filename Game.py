@@ -415,7 +415,8 @@ class Game:
                         connections.append(bottom_carriers)
 
             return connections
-
+        
+        '''
         # --- DEFENSIVE PRE-CHECK: if human is close to winning, prioritize blocking ---
         try:
             human_dist, cpu_dist = self.estimateWinningDistance()
@@ -424,30 +425,48 @@ class Game:
         # If Dijkstra says human is very close (e.g., <= 2 moves), try a pure blocking move first.
         if human_dist is not None and human_dist != float('inf') and human_dist <= 2:
             best_block = None
-            best_increase = float('-inf')
+            
             # Consider all empty cells as potential blocks
             for r in range(n):
                 for c in range(n):
                     if board[r][c] != 0:
                         continue
                     # Temporarily place CPU stone
+                    original = board[r][c]
                     board[r][c] = 2
-                    try:
-                        human_after, _ = self.estimateWinningDistance()
-                    except Exception:
-                        human_after = human_dist
+                    human_after, _ = self.estimateWinningDistance()
                     # We want to maximize human's distance to winning
-                    increase = (human_after if human_after is not None else human_dist) - human_dist
-                    board[r][c] = 0
-                    if increase > best_increase:
-                        best_increase = increase
+                    board[r][c]=original
+                
+                    if human_after > human_dist or human_after == float('inf'):
                         best_block = (r, c)
-            if best_block is not None:
+                        break
+                if best_block:
+                    break
+
+            if best_block:
                 br, bc = best_block
-                if board[br][bc] == 0:
-                    board[br][bc] = 2
-                    self.move = 1
-                    return
+                board[br][bc] = 2
+                self.move = 1
+                return
+            '''
+            
+        human_dist, cpu_dist = self.estimateWinningDistance()
+        # Only trigger expensive check if human can win in one move
+        if human_dist == 1:
+            for r in range(n):
+                for c in range(n):
+                    if board[r][c] != 0:
+                        continue
+
+                    # Simulate human move
+                    board[r][c] = 1
+                    if self.checkWin() == 1:
+                        # Block this winning cell
+                        board[r][c] = 2
+                        self.move = 1
+                        return
+                    board[r][c] = 0
             
         def cpu_has_response_after(h_r, h_c):
             """
